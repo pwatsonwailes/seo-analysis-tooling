@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { FileUploader } from './components/FileUploader';
@@ -7,6 +7,7 @@ import { ResultsTable } from './components/ResultsTable';
 import { DomainAnalysis } from './components/DomainAnalysis';
 import { Tabs } from './components/Tabs';
 import { Auth } from './components/Auth';
+import { ClearButton } from './components/ClearButton';
 import { useAuth } from './hooks/useAuth';
 import { useUrlProcessor } from './hooks/useUrlProcessor';
 
@@ -18,7 +19,8 @@ export default function App() {
     results,
     isProcessing,
     processUrls,
-    handleFileLoad
+    handleFileLoad,
+    resetState
   } = useUrlProcessor(user);
   const [activeTab, setActiveTab] = useState('results');
 
@@ -36,7 +38,13 @@ export default function App() {
         <Auth />
       ) : (
         <>
-          <FileUploader onFileLoad={handleFileLoad} />
+          <div className="flex justify-between items-start mb-6">
+            <FileUploader onFileLoad={handleFileLoad} />
+            <ClearButton 
+              onClear={resetState} 
+              disabled={urls.length === 0 && results.length === 0}
+            />
+          </div>
           <ProcessingSection
             urls={urls}
             progress={progress}

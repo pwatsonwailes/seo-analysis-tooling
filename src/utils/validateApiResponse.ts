@@ -1,13 +1,14 @@
-// Validates if the stored result contains a proper API response
-export function isValidApiResponse(data: any): boolean {
-    try {
-      // Check if we have the expected structure
-      return (
-        data?.response_data?.contents &&
-        typeof data.response_data.contents === 'string' &&
-        JSON.parse(data.response_data.contents)?.result?.organic_results?.length > 0
-      );
-    } catch {
-      return false;
-    }
+import type { ParsedResult } from '../types';
+
+export function isValidApiResponse(data: ParsedResult): boolean {
+  try {
+    if (!data?.response_data?.contents) return false;
+    
+    const parsedContents = JSON.parse(data.response_data.contents);
+    return Boolean(
+      parsedContents?.result?.organic_results?.length > 0
+    );
+  } catch {
+    return false;
   }
+}

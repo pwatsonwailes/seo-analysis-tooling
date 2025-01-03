@@ -15,16 +15,26 @@ export interface OrganicResult {
     organic_results: OrganicResult[];
   }
   
-  export interface ParsedResult {
-    id: string;
+  export interface ApiResult {
     url: string;
     response_data: {
-      result: SearchResult;
-      search_parameters: SearchParameters;
+      contents?: string;
+      status?: {
+        url: string;
+        content_type: string;
+        http_code: number;
+        response_time: number;
+      };
     };
     status: number;
     success: boolean;
     error?: string;
+  }
+  
+  export interface ParsedResult extends ApiResult {
+    id: string;
+    created_at: string;
+    user_id: string;
   }
   
   export interface DomainStats {

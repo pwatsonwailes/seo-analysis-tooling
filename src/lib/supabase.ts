@@ -11,10 +11,14 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true
   },
+  db: {
+    schema: 'public'
+  },
   global: {
     headers: {
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
     }
   }
 });

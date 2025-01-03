@@ -1,13 +1,22 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { fetchApiData } from '../lib/api';
+import { saveApiResult, updateApiResult, getExistingResult } from '../lib/db';
 import { isValidApiResponse } from '../utils/validateApiResponse';
 import type { User } from '@supabase/supabase-js';
+import type { ParsedResult } from '../types';
 
 export function useUrlProcessor(user: User | null) {
   const [urls, setUrls] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<ParsedResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const resetState = useCallback(() => {
+    setUrls([]);
+    setProgress(0);
+    setResults([]);
+    setIsProcessing(false);
+  }, []);
 
   const processUrls = useCallback(async () => {
     if (!user) return;
@@ -18,69 +27,45 @@ export function useUrlProcessor(user: User | null) {
 
     for (let i = 0; i < urls.length; i++) {
       try {
-        // First, check if we already have valid results for this URL
-        const { data: existingResults } = await supabase
-          .from('api_results')
-          .select()
-          .eq('url', urls[i])
-          .limit(1)
-          .single();
-
-        if (existingResults && isValidApiResponse(existingResults)) {
-          setResults(prev => [...prev, existingResults]);
+        const existingResult = await getExistingResult(urls[i]);
+        
+        if (existingResult && isValidApiResponse(existingResult)) {
+          setResults(prev => [...prev, existingResult]);
           setProgress(i + 1);
           continue;
         }
 
-        // If no existing results or invalid response, make the API call
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(urls[i])}`;
-        const response = await fetch(proxyUrl);
-        const proxyData = await response.json();
-        
-        const data = JSON.parse(proxyData.contents);
-        
-        const result = {
-          url: urls[i],
-          response_data: data,
-          status: response.status,
-          success: response.ok,
-          user_id: user.id
-        };
+        const apiResult = await fetchApiData(urls[i]);
+        const resultWithUser = { ...apiResult, user_id: user.id };
 
-        // If we had invalid results before, update them instead of inserting new ones
-        const { data: savedResult, error } = existingResults 
-          ? await supabase
-              .from('api_results')
-              .update(result)
-              .eq('id', existingResults.id)
-              .select()
-              .single()
-          : await supabase
-              .from('api_results')
-              .insert(result)
-              .select()
-              .single();
+        let savedResult;
+        if (existingResult) {
+          savedResult = await updateApiResult(existingResult.id, resultWithUser);
+        } else {
+          savedResult = await saveApiResult(resultWithUser);
+        }
 
-        if (error) throw error;
-        
-        setResults(prev => [...prev, savedResult]);
+        if (savedResult) {
+          setResults(prev => [...prev, savedResult]);
+        }
       } catch (error) {
+        console.error('Error processing URL:', error);
         const errorResult = {
           url: urls[i],
+          response_data: {},
           status: 0,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
           user_id: user.id
         };
 
-        const { data: savedError } = await supabase
-          .from('api_results')
-          .insert(errorResult)
-          .select()
-          .single();
-
-        if (savedError) {
-          setResults(prev => [...prev, savedError]);
+        try {
+          const savedError = await saveApiResult(errorResult);
+          if (savedError) {
+            setResults(prev => [...prev, savedError]);
+          }
+        } catch (saveError) {
+          console.error('Error saving error result:', saveError);
         }
       }
 
@@ -103,6 +88,7 @@ export function useUrlProcessor(user: User | null) {
     results,
     isProcessing,
     processUrls,
-    handleFileLoad
+    handleFileLoad,
+    resetState
   };
 }

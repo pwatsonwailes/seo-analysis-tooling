@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { analyzeDomains } from '../utils/domainAnalysis';
 import type { ParsedResult, DomainStats } from '../types';
