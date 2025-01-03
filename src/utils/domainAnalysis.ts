@@ -1,4 +1,4 @@
-import { ParsedResult, DomainStats } from '../types';
+import { ParsedResult, DomainStats, SearchResult, SearchParameters } from '../types';
 
 export function extractDomain(url: string): string {
   try {
@@ -9,13 +9,20 @@ export function extractDomain(url: string): string {
   }
 }
 
-function parseApiResponse(responseData: ParsedResult['response_data']) {
+interface ParsedApiResponse {
+  result: SearchResult;
+  search_parameters: SearchParameters;
+}
+
+function parseApiResponse(responseData: ParsedResult['response_data']): ParsedApiResponse | null {
   try {
     if (!responseData.contents) return null;
     const parsed = JSON.parse(responseData.contents);
+    if (!parsed.result?.organic_results) return null;
+    
     return {
       result: parsed.result,
-      search_parameters: parsed.search_parameters
+      search_parameters: parsed.search_parameters || {}
     };
   } catch {
     return null;
@@ -32,9 +39,9 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
 
   results.forEach(result => {
     const parsedData = parseApiResponse(result.response_data);
-    if (!parsedData?.result?.organic_results) return;
+    if (!parsedData) return;
 
-    const query = parsedData.search_parameters?.query || '';
+    const query = parsedData.search_parameters.query || '';
     
     parsedData.result.organic_results.forEach(item => {
       const domain = extractDomain(item.url);
@@ -56,11 +63,13 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
     });
   });
 
-  return Array.from(domainMap.entries()).map(([domain, stats]) => ({
-    domain,
-    averagePosition: stats.totalPositions / stats.count,
-    occurrences: stats.count,
-    uniqueUrls: Array.from(stats.urls),
-    queries: Array.from(stats.queries)
-  })).sort((a, b) => b.occurrences - a.occurrences);
+  return Array.from(domainMap.entries())
+    .map(([domain, stats]) => ({
+      domain,
+      averagePosition: Number((stats.totalPositions / stats.count).toFixed(2)),
+      occurrences: stats.count,
+      uniqueUrls: Array.from(stats.urls),
+      queries: Array.from(stats.queries)
+    }))
+    .sort((a, b) => b.occurrences - a.occurrences);
 }
