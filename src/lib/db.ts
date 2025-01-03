@@ -13,25 +13,35 @@ export async function saveApiResult(result: ApiResult & { user_id: string }) {
 }
 
 export async function updateApiResult(id: string, result: ApiResult & { user_id: string }) {
+  // Remove id from the update payload if it exists
+  const { id: _, ...updateData } = result;
+
   const { data, error } = await supabase
     .from('api_results')
-    .update(result)
+    .update(updateData)
     .eq('id', id)
+    .eq('user_id', result.user_id)
     .select()
     .single();
     
-  if (error) throw error;
+  if (error) {
+    // If update fails, try inserting as new record
+    return saveApiResult(result);
+  }
+  
   return data;
 }
 
-export async function getExistingResult(url: string) {
+export async function getExistingResult(url: string, userId: string) {
   const { data, error } = await supabase
     .from('api_results')
     .select()
     .eq('url', url)
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(1);
+    .limit(1)
+    .maybeSingle();
     
   if (error) throw error;
-  return data?.[0];
+  return data;
 }

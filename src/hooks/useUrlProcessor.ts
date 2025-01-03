@@ -27,7 +27,7 @@ export function useUrlProcessor(user: User | null) {
 
     for (let i = 0; i < urls.length; i++) {
       try {
-        const existingResult = await getExistingResult(urls[i]);
+        const existingResult = await getExistingResult(urls[i], user.id);
         
         if (existingResult && isValidApiResponse(existingResult)) {
           setResults(prev => [...prev, existingResult]);
@@ -39,7 +39,7 @@ export function useUrlProcessor(user: User | null) {
         const resultWithUser = { ...apiResult, user_id: user.id };
 
         let savedResult;
-        if (existingResult) {
+        if (existingResult?.id) {
           savedResult = await updateApiResult(existingResult.id, resultWithUser);
         } else {
           savedResult = await saveApiResult(resultWithUser);

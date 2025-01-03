@@ -1,5 +1,6 @@
 import React from 'react';
 import { ProgressBar } from './ProgressBar';
+import { Play } from 'lucide-react';
 
 interface ProcessingSectionProps {
   urls: string[];
@@ -15,11 +16,12 @@ export function ProcessingSection({ urls, progress, isProcessing, onProcess }: P
     <div className="space-y-4">
       <ProgressBar current={progress} total={urls.length} />
       
-      {!isProcessing && progress === 0 && (
+      {!isProcessing && (
         <button
           onClick={onProcess}
-          className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors"
+          className="w-full flex items-center justify-center gap-2 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors"
         >
+          <Play className="w-4 h-4" />
           Process {urls.length} URLs
         </button>
       )}
