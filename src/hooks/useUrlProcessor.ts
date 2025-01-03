@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { isValidApiResponse } from '../utils/validateApiResponse';
 import type { User } from '@supabase/supabase-js';
 
 export function useUrlProcessor(user: User | null) {
@@ -17,7 +18,7 @@ export function useUrlProcessor(user: User | null) {
 
     for (let i = 0; i < urls.length; i++) {
       try {
-        // First, check if we already have results for this URL
+        // First, check if we already have valid results for this URL
         const { data: existingResults } = await supabase
           .from('api_results')
           .select()
@@ -25,13 +26,13 @@ export function useUrlProcessor(user: User | null) {
           .limit(1)
           .single();
 
-        if (existingResults) {
+        if (existingResults && isValidApiResponse(existingResults)) {
           setResults(prev => [...prev, existingResults]);
           setProgress(i + 1);
           continue;
         }
 
-        // If no existing results, make the API call
+        // If no existing results or invalid response, make the API call
         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(urls[i])}`;
         const response = await fetch(proxyUrl);
         const proxyData = await response.json();
@@ -46,11 +47,19 @@ export function useUrlProcessor(user: User | null) {
           user_id: user.id
         };
 
-        const { data: savedResult, error } = await supabase
-          .from('api_results')
-          .insert(result)
-          .select()
-          .single();
+        // If we had invalid results before, update them instead of inserting new ones
+        const { data: savedResult, error } = existingResults 
+          ? await supabase
+              .from('api_results')
+              .update(result)
+              .eq('id', existingResults.id)
+              .select()
+              .single()
+          : await supabase
+              .from('api_results')
+              .insert(result)
+              .select()
+              .single();
 
         if (error) throw error;
         
@@ -82,7 +91,6 @@ export function useUrlProcessor(user: User | null) {
   }, [urls, user]);
 
   const handleFileLoad = useCallback((loadedUrls: string[]) => {
-    // Clean URLs by removing any trailing whitespace or newlines
     const cleanedUrls = loadedUrls.map(url => url.trim());
     setUrls(cleanedUrls);
     setProgress(0);
