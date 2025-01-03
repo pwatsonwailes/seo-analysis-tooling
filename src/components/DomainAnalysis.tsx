@@ -7,6 +7,20 @@ interface DomainAnalysisProps {
   results: ParsedResult[];
 }
 
+function UrlRankingsList({ rankings }: { rankings: { term: string; position: number }[] }) {
+  return (
+    <div className="space-y-1">
+      {rankings.map(({ term, position }, index) => (
+        <div key={`${term}-${position}-${index}`} className="text-sm">
+          <span className="font-medium text-gray-700">"{term}"</span>
+          <span className="text-gray-500"> - Position </span>
+          <span className="font-medium text-blue-600">{position}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DomainAnalysis({ results }: DomainAnalysisProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
@@ -44,7 +58,7 @@ export function DomainAnalysis({ results }: DomainAnalysisProps) {
               <div>
                 <h3 className="text-lg font-semibold">{stat.domain}</h3>
                 <div className="text-sm text-gray-600">
-                  {stat.occurrences} appearances • Avg. position: {stat.averagePosition.toFixed(1)}
+                  {stat.occurrences} appearances • Avg. position: {stat.averagePosition}
                 </div>
               </div>
               {expandedDomain === stat.domain ? (
@@ -57,31 +71,22 @@ export function DomainAnalysis({ results }: DomainAnalysisProps) {
             {expandedDomain === stat.domain && (
               <div className="mt-4 space-y-4">
                 <div>
-                  <h4 className="font-medium mb-2">Queries ({stat.queries.length})</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {stat.queries.map((query) => (
-                      <span 
-                        key={query}
-                        className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                      >
-                        {query}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-medium mb-2">URLs ({stat.uniqueUrls.length})</h4>
-                  <div className="space-y-2">
-                    {stat.uniqueUrls.map((url) => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-sm text-blue-600 hover:underline truncate"
-                      >
-                        {url}
-                      </a>
+                  <h4 className="font-medium mb-2">URLs and Rankings</h4>
+                  <div className="space-y-4">
+                    {stat.urlRankings.map(({ url, rankings }) => (
+                      <div key={url} className="pl-4 border-l-2 border-gray-200">
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline break-all"
+                        >
+                          {url}
+                        </a>
+                        <div className="mt-2">
+                          <UrlRankingsList rankings={rankings} />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>

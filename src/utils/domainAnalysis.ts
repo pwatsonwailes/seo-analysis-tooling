@@ -1,4 +1,4 @@
-import { ParsedResult, DomainStats, SearchResult, SearchParameters } from '../types';
+import { ParsedResult, DomainStats, SearchResult, SearchParameters, UrlRanking } from '../types';
 
 export function extractDomain(url: string): string {
   try {
@@ -30,10 +30,10 @@ function parseApiResponse(responseData: ParsedResult['response_data']): ParsedAp
 }
 
 export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
-  const domainMap = new Map<string, { 
+  const domainMap = new Map<string, {
     totalPositions: number;
     count: number;
-    urls: Set<string>;
+    urlRankings: Map<string, { term: string; position: number; }[]>;
     queries: Set<string>;
   }>();
 
@@ -50,15 +50,19 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
       const stats = domainMap.get(domain) || {
         totalPositions: 0,
         count: 0,
-        urls: new Set<string>(),
+        urlRankings: new Map<string, { term: string; position: number; }[]>(),
         queries: new Set<string>()
       };
 
       stats.totalPositions += item.position;
       stats.count += 1;
-      stats.urls.add(item.url);
+      
+      // Track rankings per URL
+      const urlRankings = stats.urlRankings.get(item.url) || [];
+      urlRankings.push({ term: query, position: item.position });
+      stats.urlRankings.set(item.url, urlRankings);
+      
       if (query) stats.queries.add(query);
-
       domainMap.set(domain, stats);
     });
   });
@@ -68,7 +72,10 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
       domain,
       averagePosition: Number((stats.totalPositions / stats.count).toFixed(2)),
       occurrences: stats.count,
-      uniqueUrls: Array.from(stats.urls),
+      urlRankings: Array.from(stats.urlRankings.entries()).map(([url, rankings]) => ({
+        url,
+        rankings
+      })),
       queries: Array.from(stats.queries)
     }))
     .sort((a, b) => b.occurrences - a.occurrences);

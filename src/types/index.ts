@@ -38,10 +38,18 @@ export interface ParsedResult extends ApiResult {
   user_id: string;
 }
 
+export interface UrlRanking {
+  url: string;
+  rankings: {
+    term: string;
+    position: number;
+  }[];
+}
+
 export interface DomainStats {
   domain: string;
   averagePosition: number;
   occurrences: number;
-  uniqueUrls: string[];
+  urlRankings: UrlRanking[];
   queries: string[];
 }
