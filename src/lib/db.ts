@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
-import type { ApiResult } from '../types';
+import type { ApiResult, ParsedResult } from '../types';
 
-export async function saveApiResult(result: ApiResult & { user_id: string }) {
+export async function saveApiResult(result: ApiResult & { user_id: string }): Promise<ParsedResult> {
   const { data, error } = await supabase
     .from('api_results')
     .insert(result)
@@ -12,7 +12,7 @@ export async function saveApiResult(result: ApiResult & { user_id: string }) {
   return data;
 }
 
-export async function updateApiResult(id: string, result: ApiResult & { user_id: string }) {
+export async function updateApiResult(id: string, result: ApiResult & { user_id: string }): Promise<ParsedResult> {
   // Remove id from the update payload if it exists
   const { id: _, ...updateData } = result;
 
@@ -32,7 +32,7 @@ export async function updateApiResult(id: string, result: ApiResult & { user_id:
   return data;
 }
 
-export async function getExistingResult(url: string, userId: string) {
+export async function getExistingResult(url: string, userId: string): Promise<ParsedResult | null> {
   const { data, error } = await supabase
     .from('api_results')
     .select()

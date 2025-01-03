@@ -9,6 +9,19 @@ export function extractDomain(url: string): string {
   }
 }
 
+function parseApiResponse(responseData: ParsedResult['response_data']) {
+  try {
+    if (!responseData.contents) return null;
+    const parsed = JSON.parse(responseData.contents);
+    return {
+      result: parsed.result,
+      search_parameters: parsed.search_parameters
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
   const domainMap = new Map<string, { 
     totalPositions: number;
@@ -18,11 +31,12 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
   }>();
 
   results.forEach(result => {
-    if (!result.response_data?.result?.organic_results) return;
+    const parsedData = parseApiResponse(result.response_data);
+    if (!parsedData?.result?.organic_results) return;
 
-    const query = result.response_data.search_parameters?.query || '';
+    const query = parsedData.search_parameters?.query || '';
     
-    result.response_data.result.organic_results.forEach(item => {
+    parsedData.result.organic_results.forEach(item => {
       const domain = extractDomain(item.url);
       if (!domain) return;
 
@@ -36,7 +50,7 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
       stats.totalPositions += item.position;
       stats.count += 1;
       stats.urls.add(item.url);
-      stats.queries.add(query);
+      if (query) stats.queries.add(query);
 
       domainMap.set(domain, stats);
     });
