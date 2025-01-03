@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { FileUploader } from './components/FileUploader';
 import { ProcessingSection } from './components/ProcessingSection';
 import { ResultsTable } from './components/ResultsTable';
+import { DomainAnalysis } from './components/DomainAnalysis';
+import { Tabs } from './components/Tabs';
 import { Auth } from './components/Auth';
 import { useAuth } from './hooks/useAuth';
 import { useUrlProcessor } from './hooks/useUrlProcessor';
@@ -18,6 +20,7 @@ export default function App() {
     processUrls,
     handleFileLoad
   } = useUrlProcessor(user);
+  const [activeTab, setActiveTab] = useState('results');
 
   if (authLoading) {
     return (
@@ -43,7 +46,12 @@ export default function App() {
           {results.length > 0 && (
             <div className="mt-8">
               <h2 className="text-xl font-semibold mb-4">Results</h2>
-              <ResultsTable data={results} />
+              <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+              {activeTab === 'results' ? (
+                <ResultsTable data={results} />
+              ) : (
+                <DomainAnalysis results={results} />
+              )}
             </div>
           )}
         </>
