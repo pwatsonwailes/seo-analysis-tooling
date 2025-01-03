@@ -17,8 +17,26 @@ export function useUrlProcessor(user: User | null) {
 
     for (let i = 0; i < urls.length; i++) {
       try {
-        const response = await fetch(urls[i]);
-        const data = await response.json();
+        // First, check if we already have results for this URL
+        const { data: existingResults } = await supabase
+          .from('api_results')
+          .select()
+          .eq('url', urls[i])
+          .limit(1)
+          .single();
+
+        if (existingResults) {
+          setResults(prev => [...prev, existingResults]);
+          setProgress(i + 1);
+          continue;
+        }
+
+        // If no existing results, make the API call
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(urls[i])}`;
+        const response = await fetch(proxyUrl);
+        const proxyData = await response.json();
+        
+        const data = JSON.parse(proxyData.contents);
         
         const result = {
           url: urls[i],
@@ -64,7 +82,9 @@ export function useUrlProcessor(user: User | null) {
   }, [urls, user]);
 
   const handleFileLoad = useCallback((loadedUrls: string[]) => {
-    setUrls(loadedUrls);
+    // Clean URLs by removing any trailing whitespace or newlines
+    const cleanedUrls = loadedUrls.map(url => url.trim());
+    setUrls(cleanedUrls);
     setProgress(0);
     setResults([]);
   }, []);
