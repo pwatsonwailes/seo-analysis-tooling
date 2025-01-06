@@ -37,7 +37,6 @@ export async function getExistingResult(url: string, userId: string): Promise<Pa
     .from('api_results')
     .select()
     .eq('url', url)
-    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
