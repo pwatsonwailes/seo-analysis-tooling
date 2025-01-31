@@ -6,9 +6,10 @@ import {
   createColumnHelper,
   flexRender,
 } from '@tanstack/react-table';
-import { Search, RefreshCw } from 'lucide-react';
+import { Search, RefreshCw, Filter } from 'lucide-react';
 import { fetchApiData } from '../lib/api';
 import { updateApiResult } from '../lib/db';
+import { PortfolioManager } from './PortfolioManager';
 
 interface Result {
   id: string;
@@ -27,6 +28,7 @@ interface ResultsTableProps {
 export function ResultsTable({ data }: ResultsTableProps) {
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [retrying, setRetrying] = React.useState<string | null>(null);
+  const [portfolioTerms, setPortfolioTerms] = React.useState<string[]>([]);
   const columnHelper = createColumnHelper<Result>();
 
   const handleRetry = async (result: Result) => {
@@ -49,6 +51,24 @@ export function ResultsTable({ data }: ResultsTableProps) {
       setRetrying(null);
     }
   };
+
+  const handleFilterByPortfolio = (terms: string[]) => {
+    setPortfolioTerms(terms);
+  };
+
+  const filteredData = useMemo(() => {
+    if (portfolioTerms.length === 0) return data;
+    
+    return data.filter(result => {
+      try {
+        const contents = JSON.parse(result.response_data.contents || '{}');
+        const query = contents.search_parameters?.query || '';
+        return portfolioTerms.includes(query);
+      } catch {
+        return false;
+      }
+    });
+  }, [data, portfolioTerms]);
 
   const columns = useMemo(
     () => [
@@ -97,7 +117,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
   );
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -109,15 +129,32 @@ export function ResultsTable({ data }: ResultsTableProps) {
 
   return (
     <div className="w-full">
-      <div className="mb-4 relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        <input
-          value={globalFilter ?? ''}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="pl-10 w-full p-2 border rounded-lg"
-          placeholder="Search results..."
-        />
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <input
+            value={globalFilter ?? ''}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="pl-10 w-full p-2 border rounded-lg"
+            placeholder="Search results..."
+          />
+        </div>
+        <PortfolioManager onFilterByPortfolio={handleFilterByPortfolio} />
       </div>
+      
+      {portfolioTerms.length > 0 && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+          <Filter className="w-4 h-4" />
+          <span>Filtering by portfolio ({portfolioTerms.length} terms)</span>
+          <button
+            onClick={() => setPortfolioTerms([])}
+            className="text-blue-500 hover:text-blue-700"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">

@@ -21,7 +21,8 @@ export default function App() {
     isProcessing,
     processUrls,
     handleFileLoad,
-    resetState
+    resetState,
+    loadedFromSavedList
   } = useUrlProcessor(user);
   const [activeTab, setActiveTab] = useState('results');
 
@@ -52,6 +53,7 @@ export default function App() {
               progress={progress}
               isProcessing={isProcessing}
               onProcess={processUrls}
+              showProcessButton={!loadedFromSavedList}
             />
             {results.length > 0 && (
               <div className="mt-8">

@@ -1,4 +1,5 @@
 import { ParsedResult, DomainStats, SearchResult, SearchParameters, UrlRanking } from '../types';
+import { calculateTrafficShare } from './trafficShare';
 
 export function extractDomain(url: string): string {
   try {
@@ -33,8 +34,9 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
   const domainMap = new Map<string, {
     totalPositions: number;
     count: number;
-    urlRankings: Map<string, { term: string; position: number; }[]>;
+    urlRankings: Map<string, { term: string; position: number; searchVolume: number; estimatedTraffic: number; }[]>;
     queries: Set<string>;
+    totalEstimatedTraffic: number;
   }>();
 
   results.forEach(result => {
@@ -42,6 +44,7 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
     if (!parsedData) return;
 
     const query = parsedData.search_parameters.query || '';
+    const searchVolume = result.search_volume || 0;
     
     parsedData.result.organic_results.forEach(item => {
       const domain = extractDomain(item.url);
@@ -50,16 +53,26 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
       const stats = domainMap.get(domain) || {
         totalPositions: 0,
         count: 0,
-        urlRankings: new Map<string, { term: string; position: number; }[]>(),
-        queries: new Set<string>()
+        urlRankings: new Map<string, { term: string; position: number; searchVolume: number; estimatedTraffic: number; }[]>(),
+        queries: new Set<string>(),
+        totalEstimatedTraffic: 0
       };
+
+      const trafficShare = calculateTrafficShare(item.position);
+      const estimatedTraffic = Math.round(searchVolume * trafficShare);
 
       stats.totalPositions += item.position;
       stats.count += 1;
+      stats.totalEstimatedTraffic += estimatedTraffic;
       
       // Track rankings per URL
       const urlRankings = stats.urlRankings.get(item.url) || [];
-      urlRankings.push({ term: query, position: item.position });
+      urlRankings.push({ 
+        term: query, 
+        position: item.position,
+        searchVolume,
+        estimatedTraffic
+      });
       stats.urlRankings.set(item.url, urlRankings);
       
       if (query) stats.queries.add(query);
@@ -76,7 +89,8 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
         url,
         rankings
       })),
-      queries: Array.from(stats.queries)
+      queries: Array.from(stats.queries),
+      totalEstimatedTraffic: stats.totalEstimatedTraffic
     }))
-    .sort((a, b) => b.occurrences - a.occurrences);
+    .sort((a, b) => b.totalEstimatedTraffic - a.totalEstimatedTraffic);
 }
