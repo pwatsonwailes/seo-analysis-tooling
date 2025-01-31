@@ -17,8 +17,10 @@ export default function App() {
   const {
     urls,
     progress,
+    dbLoadingProgress,
     results,
     isProcessing,
+    isLoadingFromDb,
     processUrls,
     handleFileLoad,
     resetState,
@@ -51,7 +53,9 @@ export default function App() {
             <ProcessingSection
               urls={urls}
               progress={progress}
+              dbLoadingProgress={dbLoadingProgress}
               isProcessing={isProcessing}
+              isLoadingFromDb={isLoadingFromDb}
               onProcess={processUrls}
               showProcessButton={!loadedFromSavedList}
             />

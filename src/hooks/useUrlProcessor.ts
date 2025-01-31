@@ -8,16 +8,20 @@ export function useUrlProcessor(user: User | null) {
   const [urls, setUrls] = useState<string[]>([]);
   const [searchVolumes, setSearchVolumes] = useState<Record<string, number>>({});
   const [progress, setProgress] = useState(0);
+  const [dbLoadingProgress, setDbLoadingProgress] = useState(0);
   const [results, setResults] = useState<ParsedResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoadingFromDb, setIsLoadingFromDb] = useState(false);
   const [loadedFromSavedList, setLoadedFromSavedList] = useState(false);
 
   const resetState = useCallback(() => {
     setUrls([]);
     setSearchVolumes({});
     setProgress(0);
+    setDbLoadingProgress(0);
     setResults([]);
     setIsProcessing(false);
+    setIsLoadingFromDb(false);
     setLoadedFromSavedList(false);
   }, []);
 
@@ -25,24 +29,30 @@ export function useUrlProcessor(user: User | null) {
     if (!user) return { existingResults: [], newUrls: urlsToLoad };
     
     try {
+      setIsLoadingFromDb(true);
+      setDbLoadingProgress(0);
+      
       const existingResults = await batchGetExistingResults(urlsToLoad, user.id);
       const existingUrls = new Set(existingResults.map(result => result.url));
       const newUrls = urlsToLoad.filter(url => !existingUrls.has(url));
 
       // Update search volumes in bulk if needed
-      const volumeUpdates = existingResults.map(async result => {
+      const volumeUpdates = existingResults.map(async (result, index) => {
         if (result.search_volume !== volumes[result.url]) {
           await updateSearchVolumeIfNeeded(result.url, volumes[result.url], user.id);
           result.search_volume = volumes[result.url];
         }
+        setDbLoadingProgress(Math.round(((index + 1) / existingResults.length) * 100));
         return result;
       });
 
       await Promise.all(volumeUpdates);
+      setIsLoadingFromDb(false);
       
       return { existingResults, newUrls };
     } catch (error) {
       console.error('Error loading existing results:', error);
+      setIsLoadingFromDb(false);
       return { existingResults: [], newUrls: urlsToLoad };
     }
   }, [user]);
@@ -132,6 +142,7 @@ export function useUrlProcessor(user: User | null) {
     setUrls(cleanedUrls);
     setSearchVolumes(volumes);
     setProgress(0);
+    setDbLoadingProgress(0);
     setResults([]);
     setLoadedFromSavedList(fromSavedList);
 
@@ -148,8 +159,10 @@ export function useUrlProcessor(user: User | null) {
   return {
     urls,
     progress,
+    dbLoadingProgress,
     results,
     isProcessing,
+    isLoadingFromDb,
     processUrls,
     handleFileLoad,
     resetState,
