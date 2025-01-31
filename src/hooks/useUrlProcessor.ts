@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { fetchApiData } from '../lib/api';
-import { saveApiResponse, updateSearchVolumeIfNeeded, getExistingResult } from '../lib/db';
+import { fetchApiData, fetchApiDataBatch } from '../lib/api';
+import { saveApiResponse, updateSearchVolumeIfNeeded, batchGetExistingResults } from '../lib/db';
 import type { User } from '@supabase/supabase-js';
 import type { ParsedResult } from '../types';
 
@@ -24,29 +24,27 @@ export function useUrlProcessor(user: User | null) {
   const loadExistingResults = useCallback(async (urlsToLoad: string[], volumes: Record<string, number>) => {
     if (!user) return { existingResults: [], newUrls: urlsToLoad };
     
-    const existingResults: ParsedResult[] = [];
-    const newUrls: string[] = [];
-    
-    for (const url of urlsToLoad) {
-      try {
-        const existingResult = await getExistingResult(url, user.id);
-        if (existingResult) {
-          // Only update search volume if it's different
-          if (existingResult.search_volume !== volumes[url]) {
-            await updateSearchVolumeIfNeeded(url, volumes[url], user.id);
-            existingResult.search_volume = volumes[url];
-          }
-          existingResults.push(existingResult);
-        } else {
-          newUrls.push(url);
+    try {
+      const existingResults = await batchGetExistingResults(urlsToLoad, user.id);
+      const existingUrls = new Set(existingResults.map(result => result.url));
+      const newUrls = urlsToLoad.filter(url => !existingUrls.has(url));
+
+      // Update search volumes in bulk if needed
+      const volumeUpdates = existingResults.map(async result => {
+        if (result.search_volume !== volumes[result.url]) {
+          await updateSearchVolumeIfNeeded(result.url, volumes[result.url], user.id);
+          result.search_volume = volumes[result.url];
         }
-      } catch (error) {
-        console.error('Error checking existing result:', error);
-        newUrls.push(url);
-      }
+        return result;
+      });
+
+      await Promise.all(volumeUpdates);
+      
+      return { existingResults, newUrls };
+    } catch (error) {
+      console.error('Error loading existing results:', error);
+      return { existingResults: [], newUrls: urlsToLoad };
     }
-    
-    return { existingResults, newUrls };
   }, [user]);
 
   const processUrls = useCallback(async () => {
@@ -55,66 +53,75 @@ export function useUrlProcessor(user: User | null) {
     setIsProcessing(true);
     setProgress(0);
 
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i];
-      const searchVolume = searchVolumes[url] || 0;
-
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+      const batch = urls.slice(i, i + BATCH_SIZE);
+      
       try {
-        const existingResult = await getExistingResult(url, user.id);
+        // Fetch API data in batches
+        const apiResults = await fetchApiDataBatch(batch);
         
-        if (existingResult) {
-          // Only update search volume if it's different
-          if (existingResult.search_volume !== searchVolume) {
-            await updateSearchVolumeIfNeeded(url, searchVolume, user.id);
-          }
-          
-          // Update the API response
-          const apiResult = await fetchApiData(url);
-          const updatedResult = await saveApiResponse({
-            ...apiResult,
-            user_id: user.id
-          });
-          
-          // Combine the updated result with the search volume
-          const finalResult = { ...updatedResult, search_volume: searchVolume };
-          setResults(prev => [...prev, finalResult]);
-        } else {
-          // For new entries, first save the API response
-          const apiResult = await fetchApiData(url);
-          const savedResult = await saveApiResponse({
-            ...apiResult,
-            user_id: user.id
-          });
-          
-          // Then update the search volume if needed
-          await updateSearchVolumeIfNeeded(url, searchVolume, user.id);
-          
-          // Combine the saved result with the search volume
-          const finalResult = { ...savedResult, search_volume: searchVolume };
-          setResults(prev => [...prev, finalResult]);
-        }
+        // Save results and update search volumes in parallel
+        const processedResults = await Promise.all(
+          apiResults.map(async (apiResult) => {
+            const searchVolume = searchVolumes[apiResult.url] || 0;
+            
+            try {
+              const savedResult = await saveApiResponse({
+                ...apiResult,
+                user_id: user.id
+              });
+              
+              await updateSearchVolumeIfNeeded(apiResult.url, searchVolume, user.id);
+              return { ...savedResult, search_volume: searchVolume };
+            } catch (error) {
+              console.error('Error saving result:', error);
+              const errorResult = {
+                url: apiResult.url,
+                response_data: {},
+                status: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                user_id: user.id
+              };
+
+              const savedError = await saveApiResponse(errorResult);
+              return { ...savedError, search_volume: searchVolume };
+            }
+          })
+        );
+
+        setResults(prev => [...prev, ...processedResults]);
+        setProgress(i + batch.length);
       } catch (error) {
-        console.error('Error processing URL:', error);
-        const errorResult = {
-          url,
-          response_data: {},
-          status: 0,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          user_id: user.id
-        };
+        console.error('Error processing batch:', error);
+        // Handle failed batch by processing individually
+        const individualResults = await Promise.all(
+          batch.map(url => fetchApiData(url).then(async (apiResult) => {
+            const searchVolume = searchVolumes[url] || 0;
+            const savedResult = await saveApiResponse({
+              ...apiResult,
+              user_id: user.id
+            });
+            await updateSearchVolumeIfNeeded(url, searchVolume, user.id);
+            return { ...savedResult, search_volume: searchVolume };
+          }).catch(async (error) => {
+            const errorResult = {
+              url,
+              response_data: {},
+              status: 0,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              user_id: user.id
+            };
+            const savedError = await saveApiResponse(errorResult);
+            return { ...savedError, search_volume: searchVolumes[url] || 0 };
+          }))
+        );
 
-        try {
-          const savedError = await saveApiResponse(errorResult);
-          if (savedError) {
-            setResults(prev => [...prev, { ...savedError, search_volume: searchVolume }]);
-          }
-        } catch (saveError) {
-          console.error('Error saving error result:', saveError);
-        }
+        setResults(prev => [...prev, ...individualResults]);
+        setProgress(i + batch.length);
       }
-
-      setProgress(i + 1);
     }
 
     setIsProcessing(false);

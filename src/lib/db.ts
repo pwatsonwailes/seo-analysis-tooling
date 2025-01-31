@@ -15,14 +15,40 @@ function formatError(error: unknown): Error {
   return new Error('An unexpected error occurred');
 }
 
-// Only update search volume if it's different from the existing value
+export async function batchGetExistingResults(urls: string[], userId: string): Promise<ParsedResult[]> {
+  try {
+    if (!urls.length) return [];
+    if (!userId) throw new Error('User ID is required');
+
+    const { data, error } = await supabase
+      .from('api_results')
+      .select('*')
+      .in('url', urls)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const latestResults = new Map<string, ParsedResult>();
+    data?.forEach(result => {
+      if (!latestResults.has(result.url)) {
+        latestResults.set(result.url, result);
+      }
+    });
+
+    return Array.from(latestResults.values());
+  } catch (error) {
+    console.error('Error batch getting results:', formatError(error));
+    throw formatError(error);
+  }
+}
+
 export async function updateSearchVolumeIfNeeded(url: string, newSearchVolume: number, userId: string): Promise<void> {
   try {
     if (!url) throw new Error('URL is required');
     if (!userId) throw new Error('User ID is required');
     if (typeof newSearchVolume !== 'number') throw new Error('Search volume must be a number');
 
-    // Get the most recent result for this URL
     const { data: existing, error: selectError } = await supabase
       .from('api_results')
       .select('id, search_volume')
@@ -34,7 +60,6 @@ export async function updateSearchVolumeIfNeeded(url: string, newSearchVolume: n
 
     if (selectError) throw selectError;
 
-    // Only update if we have a result and the search volume is different
     if (existing && existing.search_volume !== newSearchVolume) {
       const { error: updateError } = await supabase
         .from('api_results')
@@ -50,13 +75,11 @@ export async function updateSearchVolumeIfNeeded(url: string, newSearchVolume: n
   }
 }
 
-// Function to save or update API response data
 export async function saveApiResponse(result: Omit<ApiResult, 'search_volume'> & { user_id: string }): Promise<ParsedResult> {
   try {
     if (!result.url) throw new Error('URL is required');
     if (!result.user_id) throw new Error('User ID is required');
 
-    // Get the most recent result for this URL
     const { data: existing, error: selectError } = await supabase
       .from('api_results')
       .select('*')
@@ -69,7 +92,6 @@ export async function saveApiResponse(result: Omit<ApiResult, 'search_volume'> &
     if (selectError && selectError.code !== 'PGRST116') throw selectError;
 
     if (existing) {
-      // Update existing record
       const { data, error } = await supabase
         .from('api_results')
         .update({
@@ -87,7 +109,6 @@ export async function saveApiResponse(result: Omit<ApiResult, 'search_volume'> &
       if (!data) throw new Error('Failed to update API result');
       return data;
     } else {
-      // Create new record
       const { data, error } = await supabase
         .from('api_results')
         .insert({
@@ -97,7 +118,7 @@ export async function saveApiResponse(result: Omit<ApiResult, 'search_volume'> &
           success: result.success,
           error: result.error,
           user_id: result.user_id,
-          search_volume: 0 // Default value for new records
+          search_volume: 0
         })
         .select()
         .single();
@@ -139,7 +160,6 @@ export async function getExistingResult(url: string, userId: string): Promise<Pa
   }
 }
 
-// Portfolio management
 export async function savePortfolio(name: string, terms: string[], userId: string): Promise<Portfolio> {
   try {
     if (!name) throw new Error('Portfolio name is required');
@@ -192,7 +212,6 @@ export async function deletePortfolio(id: string): Promise<void> {
   }
 }
 
-// Keyword list management
 export async function saveKeywordList(name: string, urls: string[], searchVolumes: Record<string, number>, userId: string): Promise<KeywordList> {
   try {
     if (!name) throw new Error('List name is required');
