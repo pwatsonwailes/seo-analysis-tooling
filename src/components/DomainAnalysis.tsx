@@ -11,14 +11,22 @@ interface DomainAnalysisProps {
 type SortField = 'domain' | 'occurrences' | 'averagePosition' | 'totalEstimatedTraffic';
 type SortDirection = 'asc' | 'desc';
 
-function UrlRankingsList({ rankings }: { rankings: { term: string; position: number }[] }) {
+function UrlRankingsList({ rankings }: { rankings: { term: string; position: number; searchVolume: number; estimatedTraffic: number }[] }) {
   return (
     <div className="space-y-1">
-      {rankings.map(({ term, position }, index) => (
+      {rankings.map(({ term, position, searchVolume, estimatedTraffic }, index) => (
         <div key={`${term}-${position}-${index}`} className="text-sm">
-          <span className="font-medium text-gray-700">"{term}"</span>
-          <span className="text-gray-500"> - Position </span>
-          <span className="font-medium text-blue-600">{position}</span>
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-gray-700">"{term}"</span>
+            <div className="flex items-center gap-4">
+              <div className="text-gray-600">
+                <span className="font-medium">Position:</span> {position}
+              </div>
+              <div className="text-gray-600">
+                <span className="font-medium">Est. Traffic:</span> {estimatedTraffic.toLocaleString()}
+              </div>
+            </div>
+          </div>
         </div>
       ))}
     </div>
