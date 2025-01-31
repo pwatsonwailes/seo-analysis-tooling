@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { fetchApiData, fetchApiDataBatch } from '../lib/api';
-import { saveApiResponse, updateSearchVolumeIfNeeded, batchGetExistingResults } from '../lib/db';
+import { saveApiResponse, batchGetExistingResults } from '../lib/db';
 import type { User } from '@supabase/supabase-js';
 import type { ParsedResult } from '../types';
 
@@ -34,8 +34,6 @@ export function useUrlProcessor(user: User | null) {
       setDbLoadingProgress(0);
       
       const existingResults = await batchGetExistingResults(urlsToLoad, user.id);
-      
-      // Calculate progress based on the number of results loaded
       setDbLoadingProgress(100);
       setIsLoadingFromDb(false);
 
@@ -66,19 +64,17 @@ export function useUrlProcessor(user: User | null) {
         // Fetch API data in batches
         const apiResults = await fetchApiDataBatch(batch);
         
-        // Save results and update search volumes in parallel
+        // Save results with search volumes
         const processedResults = await Promise.all(
           apiResults.map(async (apiResult) => {
-            const searchVolume = searchVolumes[apiResult.url] || 0;
-            
             try {
               const savedResult = await saveApiResponse({
                 ...apiResult,
-                user_id: user.id
+                user_id: user.id,
+                search_volume: searchVolumes[apiResult.url] || 0
               });
               
-              await updateSearchVolumeIfNeeded(apiResult.url, searchVolume, user.id);
-              return { ...savedResult, search_volume: searchVolume };
+              return savedResult;
             } catch (error) {
               console.error('Error saving result:', error);
               const errorResult = {
@@ -87,11 +83,12 @@ export function useUrlProcessor(user: User | null) {
                 status: 0,
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
-                user_id: user.id
+                user_id: user.id,
+                search_volume: searchVolumes[apiResult.url] || 0
               };
 
               const savedError = await saveApiResponse(errorResult);
-              return { ...savedError, search_volume: searchVolume };
+              return savedError;
             }
           })
         );
@@ -103,13 +100,12 @@ export function useUrlProcessor(user: User | null) {
         // Handle failed batch by processing individually
         const individualResults = await Promise.all(
           batch.map(url => fetchApiData(url).then(async (apiResult) => {
-            const searchVolume = searchVolumes[url] || 0;
             const savedResult = await saveApiResponse({
               ...apiResult,
-              user_id: user.id
+              user_id: user.id,
+              search_volume: searchVolumes[url] || 0
             });
-            await updateSearchVolumeIfNeeded(url, searchVolume, user.id);
-            return { ...savedResult, search_volume: searchVolume };
+            return savedResult;
           }).catch(async (error) => {
             const errorResult = {
               url,
@@ -117,10 +113,11 @@ export function useUrlProcessor(user: User | null) {
               status: 0,
               success: false,
               error: error instanceof Error ? error.message : 'Unknown error',
-              user_id: user.id
+              user_id: user.id,
+              search_volume: searchVolumes[url] || 0
             };
             const savedError = await saveApiResponse(errorResult);
-            return { ...savedError, search_volume: searchVolumes[url] || 0 };
+            return savedError;
           }))
         );
 

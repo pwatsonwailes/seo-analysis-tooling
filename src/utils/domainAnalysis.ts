@@ -30,6 +30,14 @@ function parseApiResponse(responseData: ParsedResult['response_data']): ParsedAp
   }
 }
 
+function isPartialMatch(query: string, portfolioTerms: string[]): boolean {
+  const normalizedQuery = query.toLowerCase();
+  return portfolioTerms.some(term => {
+    const normalizedTerm = term.toLowerCase();
+    return normalizedQuery.includes(normalizedTerm) || normalizedTerm.includes(normalizedQuery);
+  });
+}
+
 export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
   const domainMap = new Map<string, {
     totalPositions: number;
@@ -39,6 +47,7 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
     totalEstimatedTraffic: number;
   }>();
 
+  // First pass: collect all unique domains and their data
   results.forEach(result => {
     const parsedData = parseApiResponse(result.response_data);
     if (!parsedData) return;
@@ -46,6 +55,7 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
     const query = parsedData.search_parameters.query || '';
     const searchVolume = result.search_volume || 0;
     
+    // Track all appearances for each domain in the organic results
     parsedData.result.organic_results.forEach(item => {
       const domain = extractDomain(item.url);
       if (!domain) return;
@@ -87,7 +97,7 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
       occurrences: stats.count,
       urlRankings: Array.from(stats.urlRankings.entries()).map(([url, rankings]) => ({
         url,
-        rankings
+        rankings: rankings.sort((a, b) => a.position - b.position)
       })),
       queries: Array.from(stats.queries),
       totalEstimatedTraffic: stats.totalEstimatedTraffic

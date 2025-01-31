@@ -75,7 +75,13 @@ export function DomainAnalysis({ results }: DomainAnalysisProps) {
       try {
         const contents = JSON.parse(result.response_data.contents || '{}');
         const query = contents.search_parameters?.query || '';
-        return portfolioTerms.includes(query);
+        
+        // Check for partial matches
+        return portfolioTerms.some(term => {
+          const normalizedQuery = query.toLowerCase();
+          const normalizedTerm = term.toLowerCase();
+          return normalizedQuery.includes(normalizedTerm) || normalizedTerm.includes(normalizedQuery);
+        });
       } catch {
         return false;
       }
