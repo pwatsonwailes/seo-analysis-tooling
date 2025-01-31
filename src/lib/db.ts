@@ -20,23 +20,34 @@ export async function batchGetExistingResults(urls: string[], userId: string): P
     if (!urls.length) return [];
     if (!userId) throw new Error('User ID is required');
 
-    const { data, error } = await supabase
-      .from('api_results')
-      .select('*')
-      .in('url', urls)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    // Process in smaller batches to avoid query size limits
+    const BATCH_SIZE = 100;
+    const results: ParsedResult[] = [];
+    
+    for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+      const batchUrls = urls.slice(i, i + BATCH_SIZE);
+      
+      const { data, error } = await supabase
+        .from('api_results')
+        .select('*')
+        .in('url', batchUrls)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const latestResults = new Map<string, ParsedResult>();
-    data?.forEach(result => {
-      if (!latestResults.has(result.url)) {
-        latestResults.set(result.url, result);
-      }
-    });
+      // Get only the latest result for each URL
+      const latestResults = new Map<string, ParsedResult>();
+      data?.forEach(result => {
+        if (!latestResults.has(result.url)) {
+          latestResults.set(result.url, result);
+        }
+      });
 
-    return Array.from(latestResults.values());
+      results.push(...Array.from(latestResults.values()));
+    }
+
+    return results;
   } catch (error) {
     console.error('Error batch getting results:', formatError(error));
     throw formatError(error);
@@ -58,7 +69,11 @@ export async function updateSearchVolumeIfNeeded(url: string, newSearchVolume: n
       .limit(1)
       .single();
 
-    if (selectError) throw selectError;
+    if (selectError) {
+      // If no results found, that's okay - just return
+      if (selectError.code === 'PGRST116') return;
+      throw selectError;
+    }
 
     if (existing && existing.search_volume !== newSearchVolume) {
       const { error: updateError } = await supabase

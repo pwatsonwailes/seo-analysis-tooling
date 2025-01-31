@@ -27,32 +27,27 @@ export function useUrlProcessor(user: User | null) {
 
   const loadExistingResults = useCallback(async (urlsToLoad: string[], volumes: Record<string, number>) => {
     if (!user) return { existingResults: [], newUrls: urlsToLoad };
+    if (!urlsToLoad.length) return { existingResults: [], newUrls: [] };
     
     try {
       setIsLoadingFromDb(true);
       setDbLoadingProgress(0);
       
       const existingResults = await batchGetExistingResults(urlsToLoad, user.id);
+      
+      // Calculate progress based on the number of results loaded
+      setDbLoadingProgress(100);
+      setIsLoadingFromDb(false);
+
+      // Filter out existing URLs to get new ones that need processing
       const existingUrls = new Set(existingResults.map(result => result.url));
       const newUrls = urlsToLoad.filter(url => !existingUrls.has(url));
 
-      // Update search volumes in bulk if needed
-      const volumeUpdates = existingResults.map(async (result, index) => {
-        if (result.search_volume !== volumes[result.url]) {
-          await updateSearchVolumeIfNeeded(result.url, volumes[result.url], user.id);
-          result.search_volume = volumes[result.url];
-        }
-        setDbLoadingProgress(Math.round(((index + 1) / existingResults.length) * 100));
-        return result;
-      });
-
-      await Promise.all(volumeUpdates);
-      setIsLoadingFromDb(false);
-      
       return { existingResults, newUrls };
     } catch (error) {
       console.error('Error loading existing results:', error);
       setIsLoadingFromDb(false);
+      // On error, treat all URLs as new to ensure no data is lost
       return { existingResults: [], newUrls: urlsToLoad };
     }
   }, [user]);
@@ -138,7 +133,7 @@ export function useUrlProcessor(user: User | null) {
   }, [urls, searchVolumes, user]);
 
   const handleFileLoad = useCallback(async (loadedUrls: string[], volumes: Record<string, number>, fromSavedList = false) => {
-    const cleanedUrls = loadedUrls.map(url => url.trim());
+    const cleanedUrls = loadedUrls.map(url => url.trim()).filter(Boolean);
     setUrls(cleanedUrls);
     setSearchVolumes(volumes);
     setProgress(0);
@@ -146,7 +141,7 @@ export function useUrlProcessor(user: User | null) {
     setResults([]);
     setLoadedFromSavedList(fromSavedList);
 
-    if (user) {
+    if (user && cleanedUrls.length > 0) {
       const { existingResults, newUrls } = await loadExistingResults(cleanedUrls, volumes);
       if (existingResults.length > 0) {
         setResults(existingResults);
