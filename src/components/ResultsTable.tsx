@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-table';
 import { Search, RefreshCw, Filter } from 'lucide-react';
 import { fetchApiData } from '../lib/api';
-import { updateApiResult } from '../lib/db';
+import { saveApiResponse } from '../lib/db';
 import { PortfolioManager } from './PortfolioManager';
 
 interface Result {
@@ -35,7 +35,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
     try {
       setRetrying(result.id);
       const apiResult = await fetchApiData(result.url);
-      const updatedResult = await updateApiResult(result.id, {
+      const updatedResult = await saveApiResponse({
         ...apiResult,
         user_id: result.user_id
       });

@@ -82,6 +82,6 @@ export interface KeywordList {
   id: string;
   name: string;
   urls: string[];
-  search_volumes: Record<string, number>;
+  search_volume: Record<string, number>;
   created_at: string;
 }

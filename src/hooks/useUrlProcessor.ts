@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { fetchApiData } from '../lib/api';
-import { saveApiResult, updateApiResult, getExistingResult } from '../lib/db';
-import { isValidApiResponse } from '../utils/validateApiResponse';
+import { saveApiResponse, updateSearchVolumeIfNeeded, getExistingResult } from '../lib/db';
 import type { User } from '@supabase/supabase-js';
 import type { ParsedResult } from '../types';
 
@@ -32,13 +31,12 @@ export function useUrlProcessor(user: User | null) {
       try {
         const existingResult = await getExistingResult(url, user.id);
         if (existingResult) {
-          // Always update with the new search volume
-          const updatedResult = await updateApiResult(existingResult.id, {
-            ...existingResult,
-            search_volume: volumes[url],
-            user_id: user.id
-          });
-          existingResults.push(updatedResult);
+          // Only update search volume if it's different
+          if (existingResult.search_volume !== volumes[url]) {
+            await updateSearchVolumeIfNeeded(url, volumes[url], user.id);
+            existingResult.search_volume = volumes[url];
+          }
+          existingResults.push(existingResult);
         } else {
           newUrls.push(url);
         }
@@ -65,26 +63,35 @@ export function useUrlProcessor(user: User | null) {
         const existingResult = await getExistingResult(url, user.id);
         
         if (existingResult) {
-          // Always update the search volume for existing results
-          const updatedResult = await updateApiResult(existingResult.id, {
-            ...existingResult,
-            search_volume: searchVolume,
+          // Only update search volume if it's different
+          if (existingResult.search_volume !== searchVolume) {
+            await updateSearchVolumeIfNeeded(url, searchVolume, user.id);
+          }
+          
+          // Update the API response
+          const apiResult = await fetchApiData(url);
+          const updatedResult = await saveApiResponse({
+            ...apiResult,
             user_id: user.id
           });
-          setResults(prev => [...prev, updatedResult]);
+          
+          // Combine the updated result with the search volume
+          const finalResult = { ...updatedResult, search_volume: searchVolume };
+          setResults(prev => [...prev, finalResult]);
         } else {
-          // Fetch new data and include search volume
+          // For new entries, first save the API response
           const apiResult = await fetchApiData(url);
-          const resultWithUser = { 
-            ...apiResult, 
-            user_id: user.id,
-            search_volume: searchVolume
-          };
-
-          const savedResult = await saveApiResult(resultWithUser);
-          if (savedResult) {
-            setResults(prev => [...prev, savedResult]);
-          }
+          const savedResult = await saveApiResponse({
+            ...apiResult,
+            user_id: user.id
+          });
+          
+          // Then update the search volume if needed
+          await updateSearchVolumeIfNeeded(url, searchVolume, user.id);
+          
+          // Combine the saved result with the search volume
+          const finalResult = { ...savedResult, search_volume: searchVolume };
+          setResults(prev => [...prev, finalResult]);
         }
       } catch (error) {
         console.error('Error processing URL:', error);
@@ -94,14 +101,13 @@ export function useUrlProcessor(user: User | null) {
           status: 0,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
-          user_id: user.id,
-          search_volume: searchVolume
+          user_id: user.id
         };
 
         try {
-          const savedError = await saveApiResult(errorResult);
+          const savedError = await saveApiResponse(errorResult);
           if (savedError) {
-            setResults(prev => [...prev, savedError]);
+            setResults(prev => [...prev, { ...savedError, search_volume: searchVolume }]);
           }
         } catch (saveError) {
           console.error('Error saving error result:', saveError);
