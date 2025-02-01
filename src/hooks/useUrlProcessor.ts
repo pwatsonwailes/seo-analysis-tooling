@@ -35,34 +35,51 @@ export function useUrlProcessor(user: User | null) {
       
       const existingResults = await batchGetExistingResults(urlsToLoad, user.id);
       
-      // Update search volumes for existing results if they've changed
-      const updatedResults = await Promise.all(
-        existingResults.map(async (result) => {
-          const newVolume = volumes[result.url];
+      // Separate successful and failed results
+      const successfulResults: ParsedResult[] = [];
+      const failedUrls: string[] = [];
+      
+      // Process each result
+      for (const result of existingResults) {
+        const newVolume = volumes[result.url];
+        
+        // Check if the result was successful
+        if (!result.success || result.error) {
+          failedUrls.push(result.url);
+        } else {
+          // Update search volume if needed
           if (typeof newVolume === 'number' && newVolume !== result.search_volume) {
             try {
-              return await saveApiResponse({
+              const updatedResult = await saveApiResponse({
                 ...result,
                 user_id: user.id,
                 search_volume: newVolume
               });
+              successfulResults.push(updatedResult);
             } catch (error) {
               console.error(`Error updating search volume for ${result.url}:`, error);
-              return result;
+              successfulResults.push(result);
             }
+          } else {
+            successfulResults.push(result);
           }
-          return result;
-        })
-      );
+        }
+      }
 
       setDbLoadingProgress(100);
       setIsLoadingFromDb(false);
 
-      // Filter out existing URLs to get new ones that need processing
-      const existingUrls = new Set(updatedResults.map(result => result.url));
-      const newUrls = urlsToLoad.filter(url => !existingUrls.has(url));
+      // Get URLs that don't have any results yet
+      const existingUrls = new Set(existingResults.map(result => result.url));
+      const completelyNewUrls = urlsToLoad.filter(url => !existingUrls.has(url));
 
-      return { existingResults: updatedResults, newUrls };
+      // Combine failed URLs with completely new ones
+      const urlsToProcess = [...failedUrls, ...completelyNewUrls];
+
+      return { 
+        existingResults: successfulResults, 
+        newUrls: urlsToProcess
+      };
     } catch (error) {
       console.error('Error loading existing results:', error);
       setIsLoadingFromDb(false);
@@ -156,13 +173,18 @@ export function useUrlProcessor(user: User | null) {
 
     if (user && cleanedUrls.length > 0) {
       const { existingResults, newUrls } = await loadExistingResults(cleanedUrls, volumes);
-      if (existingResults.length > 0) {
-        setResults(existingResults);
+      setResults(existingResults);
+      
+      if (newUrls.length > 0) {
         setUrls(newUrls);
-        setProgress(existingResults.length);
+        // Automatically start processing failed and new URLs
+        setIsProcessing(true);
+        processUrls();
+      } else {
+        setUrls([]);
       }
     }
-  }, [user, loadExistingResults]);
+  }, [user, loadExistingResults, processUrls]);
 
   return {
     urls,
