@@ -1,5 +1,5 @@
-const BATCH_SIZE = 5; // Process 10 requests at a time
-const RATE_LIMIT = 1; // requests per second
+const BATCH_SIZE = 3; // Reduced from 5 to 3 concurrent requests
+const RATE_LIMIT = 0.2; // Reduced to 1 request per 5 seconds (0.2 req/sec)
 const QUEUE: (() => Promise<void>)[] = [];
 let processing = false;
 
@@ -28,7 +28,9 @@ async function processQueue() {
     const batch = QUEUE.splice(0, BATCH_SIZE);
     await Promise.all(batch.map(task => task()));
     // Calculate delay based on batch size and rate limit
-    await new Promise(resolve => setTimeout(resolve, Math.ceil(batch.length / RATE_LIMIT) * 1000));
+    // Minimum 5 seconds between batches
+    const delayMs = Math.max(10000, Math.ceil(batch.length / RATE_LIMIT) * 1000);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   
   processing = false;
