@@ -2,8 +2,8 @@ import { ApiResult } from '../types';
 import { withRateLimit } from '../utils/rateLimiter';
 
 const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
-const BATCH_SIZE = 10; // Process 10 URLs at once
+const RETRY_DELAY = 10000; // 10 seconds
+const BATCH_SIZE = 5; // Process 5 URLs at once
 
 // List of CORS proxies to try in order
 const CORS_PROXIES = [
