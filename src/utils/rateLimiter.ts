@@ -1,5 +1,5 @@
-const BATCH_SIZE = 10; // Process 10 requests at a time
-const RATE_LIMIT = 2; // requests per second
+const BATCH_SIZE = 5; // Process 10 requests at a time
+const RATE_LIMIT = 1; // requests per second
 const QUEUE: (() => Promise<void>)[] = [];
 let processing = false;
 
