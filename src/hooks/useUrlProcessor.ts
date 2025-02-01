@@ -34,14 +34,35 @@ export function useUrlProcessor(user: User | null) {
       setDbLoadingProgress(0);
       
       const existingResults = await batchGetExistingResults(urlsToLoad, user.id);
+      
+      // Update search volumes for existing results if they've changed
+      const updatedResults = await Promise.all(
+        existingResults.map(async (result) => {
+          const newVolume = volumes[result.url];
+          if (typeof newVolume === 'number' && newVolume !== result.search_volume) {
+            try {
+              return await saveApiResponse({
+                ...result,
+                user_id: user.id,
+                search_volume: newVolume
+              });
+            } catch (error) {
+              console.error(`Error updating search volume for ${result.url}:`, error);
+              return result;
+            }
+          }
+          return result;
+        })
+      );
+
       setDbLoadingProgress(100);
       setIsLoadingFromDb(false);
 
       // Filter out existing URLs to get new ones that need processing
-      const existingUrls = new Set(existingResults.map(result => result.url));
+      const existingUrls = new Set(updatedResults.map(result => result.url));
       const newUrls = urlsToLoad.filter(url => !existingUrls.has(url));
 
-      return { existingResults, newUrls };
+      return { existingResults: updatedResults, newUrls };
     } catch (error) {
       console.error('Error loading existing results:', error);
       setIsLoadingFromDb(false);
@@ -68,13 +89,11 @@ export function useUrlProcessor(user: User | null) {
         const processedResults = await Promise.all(
           apiResults.map(async (apiResult) => {
             try {
-              const savedResult = await saveApiResponse({
+              return await saveApiResponse({
                 ...apiResult,
                 user_id: user.id,
                 search_volume: searchVolumes[apiResult.url] || 0
               });
-              
-              return savedResult;
             } catch (error) {
               console.error('Error saving result:', error);
               const errorResult = {
@@ -87,8 +106,7 @@ export function useUrlProcessor(user: User | null) {
                 search_volume: searchVolumes[apiResult.url] || 0
               };
 
-              const savedError = await saveApiResponse(errorResult);
-              return savedError;
+              return await saveApiResponse(errorResult);
             }
           })
         );
@@ -100,12 +118,11 @@ export function useUrlProcessor(user: User | null) {
         // Handle failed batch by processing individually
         const individualResults = await Promise.all(
           batch.map(url => fetchApiData(url).then(async (apiResult) => {
-            const savedResult = await saveApiResponse({
+            return await saveApiResponse({
               ...apiResult,
               user_id: user.id,
               search_volume: searchVolumes[url] || 0
             });
-            return savedResult;
           }).catch(async (error) => {
             const errorResult = {
               url,
@@ -116,8 +133,7 @@ export function useUrlProcessor(user: User | null) {
               user_id: user.id,
               search_volume: searchVolumes[url] || 0
             };
-            const savedError = await saveApiResponse(errorResult);
-            return savedError;
+            return await saveApiResponse(errorResult);
           }))
         );
 

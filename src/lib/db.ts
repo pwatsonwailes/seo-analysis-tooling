@@ -25,36 +25,6 @@ function formatError(error: unknown): Error {
   return new Error('An unexpected error occurred');
 }
 
-export async function saveApiResponse(
-  result: Omit<ApiResult, 'search_volume'> & { user_id: string; search_volume?: number }
-): Promise<ParsedResult> {
-  try {
-    if (!result.url) throw new Error('URL is required');
-    if (!result.user_id) throw new Error('User ID is required');
-
-    const { data, error } = await supabase
-      .from('api_results')
-      .insert({
-        url: result.url,
-        response_data: result.response_data,
-        status: result.status,
-        success: result.success,
-        error: result.error,
-        user_id: result.user_id,
-        search_volume: result.search_volume || 0
-      })
-      .select()
-      .single();
-      
-    if (error) throw error;
-    if (!data) throw new Error('Failed to create API result');
-    return data;
-  } catch (error) {
-    console.error('Error saving API response:', formatError(error));
-    throw formatError(error);
-  }
-}
-
 export async function batchGetExistingResults(urls: string[], userId: string): Promise<ParsedResult[]> {
   try {
     if (!urls.length) return [];
@@ -89,8 +59,124 @@ export async function batchGetExistingResults(urls: string[], userId: string): P
 
     return results;
   } catch (error) {
-    console.error('Error batch getting results:', formatError(error));
+    console.error('Error batch getting results:', error);
     throw formatError(error);
+  }
+}
+
+export async function saveApiResponse(
+  result: Omit<ApiResult, 'search_volume'> & { user_id: string; search_volume?: number }
+): Promise<ParsedResult> {
+  try {
+    if (!result.url) throw new Error('URL is required');
+    if (!result.user_id) throw new Error('User ID is required');
+
+    // First check if we have an existing result
+    const { data: existingResults, error: selectError } = await supabase
+      .from('api_results')
+      .select('*')
+      .eq('url', result.url)
+      .eq('user_id', result.user_id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (selectError) {
+      console.error('Error fetching existing result:', selectError);
+      throw selectError;
+    }
+
+    const existing = existingResults?.[0];
+
+    // If we have an existing result
+    if (existing) {
+      console.log(`Found existing result for ${result.url}. Success: ${existing.success}, Current volume: ${existing.search_volume}, New volume: ${result.search_volume}`);
+
+      // If the existing result was unsuccessful or we have new API data, create a new record
+      if (!existing.success || (result.response_data && Object.keys(result.response_data).length > 0)) {
+        console.log(`Creating new record for ${result.url} due to ${!existing.success ? 'previous failure' : 'new API data'}`);
+        const { data: inserted, error: insertError } = await supabase
+          .from('api_results')
+          .insert({
+            url: result.url,
+            response_data: result.response_data,
+            status: result.status,
+            success: result.success,
+            error: result.error,
+            user_id: result.user_id,
+            search_volume: result.search_volume || 0
+          })
+          .select()
+          .single();
+          
+        if (insertError) {
+          console.error('Error inserting new record:', insertError);
+          throw insertError;
+        }
+
+        if (!inserted) {
+          throw new Error(`Failed to create API result for ${result.url}`);
+        }
+
+        return inserted;
+      }
+
+      // If we're just updating the search volume for a successful result
+      if (existing.success && existing.search_volume !== result.search_volume) {
+        console.log(`Updating only search volume for ${result.url}`);
+        
+        const { data: updated, error: updateError } = await supabase
+          .from('api_results')
+          .update({ search_volume: result.search_volume || 0 })
+          .eq('id', existing.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error('Error updating search volume:', updateError);
+          throw updateError;
+        }
+
+        if (!updated) {
+          throw new Error(`Failed to update search volume for ${result.url}`);
+        }
+
+        return updated;
+      }
+
+      // If nothing needs to be updated, return the existing result
+      return existing;
+    }
+
+    // If we don't have an existing result, create a new record
+    console.log(`Creating new record for ${result.url} (no existing record)`);
+    const { data: inserted, error: insertError } = await supabase
+      .from('api_results')
+      .insert({
+        url: result.url,
+        response_data: result.response_data,
+        status: result.status,
+        success: result.success,
+        error: result.error,
+        user_id: result.user_id,
+        search_volume: result.search_volume || 0
+      })
+      .select()
+      .single();
+      
+    if (insertError) {
+      console.error('Error inserting new record:', insertError);
+      throw insertError;
+    }
+
+    if (!inserted) {
+      throw new Error(`Failed to create API result for ${result.url}`);
+    }
+
+    return inserted;
+  } catch (error) {
+    const formattedError = formatError(error);
+    console.error('Error saving API response:', formattedError);
+    throw formattedError;
   }
 }
 
@@ -108,10 +194,14 @@ export async function getExistingResult(url: string, userId: string): Promise<Pa
       .limit(1)
       .maybeSingle();
       
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching existing result:', error);
+      throw error;
+    }
+
     return data;
   } catch (error) {
-    console.error('Error getting existing result:', formatError(error));
+    console.error('Error getting existing result:', error);
     throw formatError(error);
   }
 }
