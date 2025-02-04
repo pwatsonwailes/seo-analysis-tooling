@@ -41,15 +41,24 @@ export function useUrlProcessor(user: User | null) {
       
       // Process each result
       for (const result of existingResults) {
-        const newVolume = volumes[result.url];
+        // Ensure result and response_data are defined
+        if (!result || !result.response_data) {
+          failedUrls.push(result?.url || '');
+          continue;
+        }
+
+        // Use the volume from the provided volumes object if it exists,
+        // otherwise use the volume from the database result
+        const newVolume = volumes[result.url] !== undefined 
+          ? volumes[result.url] 
+          : (result.search_volume || 0);
         
         // Check if the result was successful
         if (!result.success || result.error) {
           failedUrls.push(result.url);
         } else {
-          // Update search volume if needed, using the new volume if available,
-          // otherwise keep the existing volume from the database
-          if (typeof newVolume === 'number' && newVolume !== result.search_volume) {
+          // Update search volume if it's different from what's in the database
+          if (newVolume !== result.search_volume) {
             try {
               const updatedResult = await saveApiResponse({
                 ...result,
