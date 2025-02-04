@@ -47,7 +47,8 @@ export function useUrlProcessor(user: User | null) {
         if (!result.success || result.error) {
           failedUrls.push(result.url);
         } else {
-          // Update search volume if needed
+          // Update search volume if needed, using the new volume if available,
+          // otherwise keep the existing volume from the database
           if (typeof newVolume === 'number' && newVolume !== result.search_volume) {
             try {
               const updatedResult = await saveApiResponse({
@@ -61,6 +62,7 @@ export function useUrlProcessor(user: User | null) {
               successfulResults.push(result);
             }
           } else {
+            // Keep the existing result with its current search volume
             successfulResults.push(result);
           }
         }
