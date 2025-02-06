@@ -196,7 +196,7 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              onFileLoad(list.search_volumes, true);
+                              onFileLoad(list.search_volume, true);
                               setShowSavedLists(false);
                             }}
                             className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded"

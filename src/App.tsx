@@ -29,7 +29,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('results');
 
   // Get the number of URLs from baseData
-  const urlCount = Object.keys(baseData).length;
+  const urlCount = baseData ? Object.keys(baseData).length : 0;
 
   if (authLoading) {
     return (
@@ -54,7 +54,7 @@ export default function App() {
               />
             </div>
             <ProcessingSection
-              urls={Object.keys(baseData)}
+              urls={baseData && Object.keys(baseData)}
               progress={progress}
               dbLoadingProgress={dbLoadingProgress}
               isProcessing={isProcessing}

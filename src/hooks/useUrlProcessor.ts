@@ -24,6 +24,7 @@ export function useUrlProcessor(user: User | null) {
   }, []);
 
   const loadExistingResults = useCallback(async (data: Record<string, number>) => {
+    console.log('data', data)
     const urlsToLoad = Object.keys(data);
     if (!user) return { existingResults: [], newUrls: urlsToLoad };
     if (!urlsToLoad.length) return { existingResults: [], newUrls: [] };
