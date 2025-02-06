@@ -5,8 +5,7 @@ import type { User } from '@supabase/supabase-js';
 import type { ParsedResult } from '../types';
 
 export function useUrlProcessor(user: User | null) {
-  const [urls, setUrls] = useState<string[]>([]);
-  const [searchVolumes, setSearchVolumes] = useState<Record<string, number>>({});
+  const [baseData, setBaseData] = useState<Record<string, number>>({});
   const [progress, setProgress] = useState(0);
   const [dbLoadingProgress, setDbLoadingProgress] = useState(0);
   const [results, setResults] = useState<ParsedResult[]>([]);
@@ -15,8 +14,7 @@ export function useUrlProcessor(user: User | null) {
   const [loadedFromSavedList, setLoadedFromSavedList] = useState(false);
 
   const resetState = useCallback(() => {
-    setUrls([]);
-    setSearchVolumes({});
+    setBaseData({});
     setProgress(0);
     setDbLoadingProgress(0);
     setResults([]);
@@ -25,7 +23,8 @@ export function useUrlProcessor(user: User | null) {
     setLoadedFromSavedList(false);
   }, []);
 
-  const loadExistingResults = useCallback(async (urlsToLoad: string[], volumes: Record<string, number>) => {
+  const loadExistingResults = useCallback(async (data: Record<string, number>) => {
+    const urlsToLoad = Object.keys(data);
     if (!user) return { existingResults: [], newUrls: urlsToLoad };
     if (!urlsToLoad.length) return { existingResults: [], newUrls: [] };
     
@@ -47,23 +46,17 @@ export function useUrlProcessor(user: User | null) {
           continue;
         }
 
-        // Use the volume from the provided volumes object if it exists,
-        // otherwise use the volume from the database result
-        const newVolume = typeof volumes[result.url] !== 'undefined' 
-          ? volumes[result.url] 
-          : (result.search_volume || 0);
-        
         // Check if the result was successful
         if (!result.success || result.error) {
           failedUrls.push(result.url);
         } else {
           // Update search volume if it's different from what's in the database
-          if (newVolume !== result.search_volume) {
+          if (data[result.url] !== result.search_volume) {
             try {
               const updatedResult = await saveApiResponse({
                 ...result,
                 user_id: user.id,
-                search_volume: newVolume
+                search_volume: data[result.url]
               });
               successfulResults.push(updatedResult);
             } catch (error) {
@@ -106,8 +99,8 @@ export function useUrlProcessor(user: User | null) {
     setProgress(0);
 
     const BATCH_SIZE = 10;
-    for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-      const batch = urls.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < data.length; i += BATCH_SIZE) {
+      const batch = Object.keys(data).slice(i, i + BATCH_SIZE);
       
       try {
         // Fetch API data in batches
@@ -120,7 +113,7 @@ export function useUrlProcessor(user: User | null) {
               return await saveApiResponse({
                 ...apiResult,
                 user_id: user.id,
-                search_volume: searchVolumes[apiResult.url] || 0
+                search_volume: data[apiResult.url] || 0
               });
             } catch (error) {
               console.error('Error saving result:', error);
@@ -131,7 +124,7 @@ export function useUrlProcessor(user: User | null) {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
                 user_id: user.id,
-                search_volume: searchVolumes[apiResult.url] || 0
+                search_volume: data[apiResult.url] || 0
               };
 
               return await saveApiResponse(errorResult);
@@ -142,14 +135,13 @@ export function useUrlProcessor(user: User | null) {
         setResults(prev => [...prev, ...processedResults]);
         setProgress(i + batch.length);
       } catch (error) {
-        console.error('Error processing batch:', error);
         // Handle failed batch by processing individually
         const individualResults = await Promise.all(
           batch.map(url => fetchApiData(url).then(async (apiResult) => {
             return await saveApiResponse({
               ...apiResult,
               user_id: user.id,
-              search_volume: searchVolumes[url] || 0
+              search_volume: data[url] || 0
             });
           }).catch(async (error) => {
             const errorResult = {
@@ -159,7 +151,7 @@ export function useUrlProcessor(user: User | null) {
               success: false,
               error: error instanceof Error ? error.message : 'Unknown error',
               user_id: user.id,
-              search_volume: searchVolumes[url] || 0
+              search_volume: data[url] || 0
             };
             return await saveApiResponse(errorResult);
           }))
@@ -171,19 +163,17 @@ export function useUrlProcessor(user: User | null) {
     }
 
     setIsProcessing(false);
-  }, [urls, searchVolumes, user]);
+  }, [baseData, user]);
 
-  const handleFileLoad = useCallback(async (loadedUrls: string[], volumes: Record<string, number>, fromSavedList = false) => {
-    const cleanedUrls = loadedUrls.map(url => url.trim()).filter(Boolean);
-    setUrls(cleanedUrls);
-    setSearchVolumes(volumes);
+  const handleFileLoad = useCallback(async (data: Record<string, number>, fromSavedList = false) => {
+    setBaseData(data);
     setProgress(0);
     setDbLoadingProgress(0);
     setResults([]);
     setLoadedFromSavedList(fromSavedList);
 
-    if (user && cleanedUrls.length > 0) {
-      const { existingResults, newUrls } = await loadExistingResults(cleanedUrls, volumes);
+    if (user && data.length > 0) {
+      const { existingResults, newUrls } = await loadExistingResults(data);
       setResults(existingResults);
       
       if (newUrls.length > 0) {
@@ -198,7 +188,7 @@ export function useUrlProcessor(user: User | null) {
   }, [user, loadExistingResults, processUrls]);
 
   return {
-    urls,
+    baseData,
     progress,
     dbLoadingProgress,
     results,

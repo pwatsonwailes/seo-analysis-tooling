@@ -6,15 +6,14 @@ import type { KeywordList } from '../types';
 import { useAuth } from '../hooks/useAuth';
 
 interface FileUploaderProps {
-  onFileLoad: (urls: string[], searchVolumes: Record<string, number>, fromSavedList?: boolean) => void;
+  onFileLoad: (data: Record<string, number>, fromSavedList?: boolean) => void;
 }
 
 export function FileUploader({ onFileLoad }: FileUploaderProps) {
   const { user } = useAuth();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [listName, setListName] = useState('');
-  const [currentUrls, setCurrentUrls] = useState<string[]>([]);
-  const [currentSearchVolumes, setCurrentSearchVolumes] = useState<Record<string, number>>({});
+  const [currentData, setCurrentData] = useState<Record<string, number>>({});
   const [savedLists, setSavedLists] = useState<KeywordList[]>([]);
   const [showSavedLists, setShowSavedLists] = useState(false);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
@@ -36,13 +35,13 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
       const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
       const errors: string[] = [];
       const validUrls: string[] = [];
-      const searchVolumes: Record<string, number> = {};
+      const data: Record<string, number> = {};
 
       lines.forEach((line, index) => {
         const urlData = parseUrlData(line);
         if (urlData) {
           validUrls.push(urlData.url);
-          searchVolumes[urlData.url] = urlData.searchVolume;
+          data[urlData.url] = urlData.searchVolume;
         } else {
           errors.push(`Line ${index + 1}: Invalid format. Expected "URL\tSearch Volume"`);
         }
@@ -53,8 +52,8 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
       } else {
         setParseErrors([]);
         setCurrentUrls(validUrls);
-        setCurrentSearchVolumes(searchVolumes);
-        onFileLoad(validUrls, searchVolumes, false);
+        setCurrentData(data);
+        onFileLoad(data, false);
         setShowSaveDialog(true);
       }
     };
@@ -65,7 +64,7 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
     if (!listName || currentUrls.length === 0 || !user) return;
     
     try {
-      await saveKeywordList(listName, currentUrls, currentSearchVolumes, user.id);
+      await saveKeywordList(listName, currentUrls, currentData, user.id);
       setShowSaveDialog(false);
       setListName('');
       // Refresh the lists if the modal is open
@@ -200,7 +199,7 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              onFileLoad(list.urls, list.search_volumes, true);
+                              onFileLoad(list.data, true);
                               setShowSavedLists(false);
                             }}
                             className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded"
