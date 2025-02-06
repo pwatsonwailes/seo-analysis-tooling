@@ -34,13 +34,11 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
       const text = e.target?.result as string;
       const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
       const errors: string[] = [];
-      const validUrls: string[] = [];
       const data: Record<string, number> = {};
 
       lines.forEach((line, index) => {
         const urlData = parseUrlData(line);
         if (urlData) {
-          validUrls.push(urlData.url);
           data[urlData.url] = urlData.searchVolume;
         } else {
           errors.push(`Line ${index + 1}: Invalid format. Expected "URL\tSearch Volume"`);
@@ -51,7 +49,6 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
         setParseErrors(errors);
       } else {
         setParseErrors([]);
-        setCurrentUrls(validUrls);
         setCurrentData(data);
         onFileLoad(data, false);
         setShowSaveDialog(true);
@@ -61,10 +58,10 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
   }, [onFileLoad]);
 
   const handleSaveList = async () => {
-    if (!listName || currentUrls.length === 0 || !user) return;
+    if (!listName || Object.keys(currentData).length === 0 || !user) return;
     
     try {
-      await saveKeywordList(listName, currentUrls, currentData, user.id);
+      await saveKeywordList(listName, Object.keys(currentData), currentData, user.id);
       setShowSaveDialog(false);
       setListName('');
       // Refresh the lists if the modal is open
@@ -199,7 +196,7 @@ export function FileUploader({ onFileLoad }: FileUploaderProps) {
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              onFileLoad(list.data, true);
+                              onFileLoad(list.search_volumes, true);
                               setShowSavedLists(false);
                             }}
                             className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded"

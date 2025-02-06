@@ -15,7 +15,7 @@ import { useUrlProcessor } from './hooks/useUrlProcessor';
 export default function App() {
   const { user, loading: authLoading } = useAuth();
   const {
-    urls,
+    baseData,
     progress,
     dbLoadingProgress,
     results,
@@ -27,6 +27,9 @@ export default function App() {
     loadedFromSavedList
   } = useUrlProcessor(user);
   const [activeTab, setActiveTab] = useState('results');
+
+  // Get the number of URLs from baseData
+  const urlCount = Object.keys(baseData).length;
 
   if (authLoading) {
     return (
@@ -47,11 +50,11 @@ export default function App() {
               <FileUploader onFileLoad={handleFileLoad} />
               <ClearButton 
                 onClear={resetState} 
-                disabled={urls.length === 0 && results.length === 0}
+                disabled={urlCount === 0 && results.length === 0}
               />
             </div>
             <ProcessingSection
-              urls={urls}
+              urls={Object.keys(baseData)}
               progress={progress}
               dbLoadingProgress={dbLoadingProgress}
               isProcessing={isProcessing}

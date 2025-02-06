@@ -98,9 +98,11 @@ export function useUrlProcessor(user: User | null) {
     setIsProcessing(true);
     setProgress(0);
 
+    const urls = Object.keys(baseData);
     const BATCH_SIZE = 10;
-    for (let i = 0; i < data.length; i += BATCH_SIZE) {
-      const batch = Object.keys(data).slice(i, i + BATCH_SIZE);
+    
+    for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+      const batch = urls.slice(i, i + BATCH_SIZE);
       
       try {
         // Fetch API data in batches
@@ -113,7 +115,7 @@ export function useUrlProcessor(user: User | null) {
               return await saveApiResponse({
                 ...apiResult,
                 user_id: user.id,
-                search_volume: data[apiResult.url] || 0
+                search_volume: baseData[apiResult.url] || 0
               });
             } catch (error) {
               console.error('Error saving result:', error);
@@ -124,7 +126,7 @@ export function useUrlProcessor(user: User | null) {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
                 user_id: user.id,
-                search_volume: data[apiResult.url] || 0
+                search_volume: baseData[apiResult.url] || 0
               };
 
               return await saveApiResponse(errorResult);
@@ -141,7 +143,7 @@ export function useUrlProcessor(user: User | null) {
             return await saveApiResponse({
               ...apiResult,
               user_id: user.id,
-              search_volume: data[url] || 0
+              search_volume: baseData[url] || 0
             });
           }).catch(async (error) => {
             const errorResult = {
@@ -151,7 +153,7 @@ export function useUrlProcessor(user: User | null) {
               success: false,
               error: error instanceof Error ? error.message : 'Unknown error',
               user_id: user.id,
-              search_volume: data[url] || 0
+              search_volume: baseData[url] || 0
             };
             return await saveApiResponse(errorResult);
           }))
@@ -172,17 +174,21 @@ export function useUrlProcessor(user: User | null) {
     setResults([]);
     setLoadedFromSavedList(fromSavedList);
 
-    if (user && data.length > 0) {
+    if (user && Object.keys(data).length > 0) {
       const { existingResults, newUrls } = await loadExistingResults(data);
       setResults(existingResults);
       
       if (newUrls.length > 0) {
-        setUrls(newUrls);
+        // Filter baseData to only include new URLs
+        const newData = Object.fromEntries(
+          Object.entries(data).filter(([url]) => newUrls.includes(url))
+        );
+        setBaseData(newData);
         // Automatically start processing failed and new URLs
         setIsProcessing(true);
         processUrls();
       } else {
-        setUrls([]);
+        setBaseData({});
       }
     }
   }, [user, loadExistingResults, processUrls]);
