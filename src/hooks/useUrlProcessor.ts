@@ -49,7 +49,7 @@ export function useUrlProcessor(user: User | null) {
 
         // Use the volume from the provided volumes object if it exists,
         // otherwise use the volume from the database result
-        const newVolume = volumes[result.url] !== undefined 
+        const newVolume = typeof volumes[result.url] !== 'undefined' 
           ? volumes[result.url] 
           : (result.search_volume || 0);
         
