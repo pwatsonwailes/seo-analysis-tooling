@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { Search, ChevronDown, ChevronUp, Filter, ArrowUpDown } from 'lucide-react';
-import { analyzeDomains } from '../utils/domainAnalysis';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, ChevronDown, ChevronUp, Filter, ArrowUpDown, Loader2 } from 'lucide-react';
+import { useAnalysis } from '../hooks/useAnalysis';
 import { PortfolioManager } from './PortfolioManager';
 import type { ParsedResult, DomainStats } from '../types';
 
@@ -62,11 +62,17 @@ function SortButton({
 }
 
 export function DomainAnalysis({ results }: DomainAnalysisProps) {
+  const { analyze, analyzing, progress } = useAnalysis();
+  const [domainStats, setDomainStats] = useState<DomainStats[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [portfolioTerms, setPortfolioTerms] = useState<string[]>([]);
   const [sortField, setSortField] = useState<SortField>('totalEstimatedTraffic');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  useEffect(() => {
+    analyze(results).then(setDomainStats);
+  }, [results, analyze]);
 
   const filteredResults = useMemo(() => {
     if (portfolioTerms.length === 0) return results;
@@ -87,8 +93,6 @@ export function DomainAnalysis({ results }: DomainAnalysisProps) {
       }
     });
   }, [results, portfolioTerms]);
-
-  const domainStats = useMemo(() => analyzeDomains(filteredResults), [filteredResults]);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -128,6 +132,15 @@ export function DomainAnalysis({ results }: DomainAnalysisProps) {
 
     return sorted;
   }, [domainStats, sortField, sortDirection, searchTerm]);
+
+  if (analyzing) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8">
+        <Loader2 className="w-8 h-8 animate-spin mb-4" />
+        <p className="text-gray-600">Analyzing data... {progress}%</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
