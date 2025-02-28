@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { processWithOptimizedJS } from '../utils/gpuUtils';
 import type { ParsedResult, DomainStats } from '../types';
 
 // Create a worker instance
@@ -23,9 +24,30 @@ export function useAnalysis() {
         
         if (type === 'complete') {
           worker.removeEventListener('message', handleMessage);
-          setAnalyzing(false);
-          setProgress(100);
-          resolve(data);
+          
+          // Process the prepared data with optimized JS on the main thread
+          try {
+            const processedData = data.map(item => {
+              const { positions, searchVolumes, ...rest } = item;
+              
+              // Use optimized JS processing instead of GPU
+              const jsResults = processWithOptimizedJS(positions, searchVolumes);
+              
+              return {
+                ...rest,
+                averagePosition: Number(jsResults.averagePosition.toFixed(2)),
+                totalEstimatedTraffic: jsResults.estimatedTraffic.reduce((a, b) => a + b, 0)
+              };
+            });
+
+            setAnalyzing(false);
+            setProgress(100);
+            resolve(processedData.sort((a, b) => b.totalEstimatedTraffic - a.totalEstimatedTraffic));
+          } catch (error) {
+            setAnalyzing(false);
+            setError(error instanceof Error ? error.message : 'Processing failed');
+            reject(error);
+          }
         } else if (type === 'error') {
           worker.removeEventListener('message', handleMessage);
           setAnalyzing(false);

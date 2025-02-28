@@ -1,12 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   createColumnHelper,
   flexRender,
 } from '@tanstack/react-table';
-import { Search, RefreshCw, Filter } from 'lucide-react';
+import { Search, RefreshCw, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchApiData } from '../lib/api';
 import { saveApiResponse } from '../lib/db';
 import { PortfolioManager } from './PortfolioManager';
@@ -26,12 +27,12 @@ interface ResultsTableProps {
 }
 
 export function ResultsTable({ data }: ResultsTableProps) {
-  const [globalFilter, setGlobalFilter] = React.useState('');
-  const [retrying, setRetrying] = React.useState<string | null>(null);
-  const [portfolioTerms, setPortfolioTerms] = React.useState<string[]>([]);
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [portfolioTerms, setPortfolioTerms] = useState<string[]>([]);
   const columnHelper = createColumnHelper<Result>();
 
-  const handleRetry = async (result: Result) => {
+  const handleRetry = useCallback(async (result: Result) => {
     try {
       setRetrying(result.id);
       const apiResult = await fetchApiData(result.url);
@@ -50,11 +51,11 @@ export function ResultsTable({ data }: ResultsTableProps) {
     } finally {
       setRetrying(null);
     }
-  };
+  }, [data]);
 
-  const handleFilterByPortfolio = (terms: string[]) => {
+  const handleFilterByPortfolio = useCallback((terms: string[]) => {
     setPortfolioTerms(terms);
-  };
+  }, []);
 
   const filteredData = useMemo(() => {
     if (portfolioTerms.length === 0) return data;
@@ -63,7 +64,13 @@ export function ResultsTable({ data }: ResultsTableProps) {
       try {
         const contents = JSON.parse(result.response_data.contents || '{}');
         const query = contents.search_parameters?.query || '';
-        return portfolioTerms.includes(query);
+        
+        // Check for partial matches
+        return portfolioTerms.some(term => {
+          const normalizedQuery = query.toLowerCase();
+          const normalizedTerm = term.toLowerCase();
+          return normalizedQuery.includes(normalizedTerm) || normalizedTerm.includes(normalizedQuery);
+        });
       } catch {
         return false;
       }
@@ -113,7 +120,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
         cell: (info) => new Date(info.getValue()).toLocaleString(),
       }),
     ],
-    [columnHelper, retrying]
+    [columnHelper, retrying, handleRetry]
   );
 
   const table = useReactTable({
@@ -121,8 +128,13 @@ export function ResultsTable({ data }: ResultsTableProps) {
     columns,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     state: {
       globalFilter,
+      pagination: {
+        pageIndex: 0,
+        pageSize: 25,
+      },
     },
     onGlobalFilterChange: setGlobalFilter,
   });
@@ -183,6 +195,39 @@ export function ResultsTable({ data }: ResultsTableProps) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-700">
+            Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1} to{' '}
+            {Math.min(
+              (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+              table.getPrePaginationRowModel().rows.length
+            )}{' '}
+            of {table.getPrePaginationRowModel().rows.length} results
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            className="p-1 rounded-md border disabled:opacity-50"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <span className="text-sm">
+            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+          </span>
+          <button
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            className="p-1 rounded-md border disabled:opacity-50"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
       </div>
     </div>
   );

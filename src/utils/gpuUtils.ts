@@ -1,118 +1,81 @@
-import { GPU } from 'gpu.js';
 import memoizee from 'memoizee';
+import { calculateTrafficShareBatch, calculateEstimatedTrafficBatch, calculateAveragePosition } from './trafficShare';
 
-// Create GPU instance with optimized settings
-const gpu = new GPU({
-  mode: 'gpu',
-  tactic: 'precision',
-  optimizeFloatMemory: true,
-  allowGPUFallback: true
-});
-
-// Optimize kernel for traffic share calculations with dynamic output size
-const createTrafficShareKernel = (size: number) => gpu.createKernel(function(positions: number[]) {
-  const position = positions[this.thread.x];
-  
-  // Optimized branching for GPU
-  const pos = Math.floor(position);
-  return (
-    pos <= 1 ? 0.30 :
-    pos <= 2 ? 0.13 :
-    pos <= 3 ? 0.09 :
-    pos <= 4 ? 0.06 :
-    pos <= 5 ? 0.04 :
-    pos <= 6 ? 0.03 :
-    pos <= 7 ? 0.023 :
-    pos <= 8 ? 0.019 :
-    pos <= 9 ? 0.019 :
-    pos <= 10 ? 0.017 :
-    pos <= 15 ? 0.013 :
-    pos <= 20 ? 0.01 :
-    pos <= 30 ? 0.002 :
-    0
-  );
-}).setOutput([size])
-  .setPipeline(true)
-  .setImmutable(true);
-
-// Memoize kernel creation for different sizes
-const memoizedCreateTrafficShareKernel = memoizee(createTrafficShareKernel, {
+// Memoize expensive calculations
+const memoizedTrafficShareBatch = memoizee(calculateTrafficShareBatch, {
   primitive: true,
-  max: 10 // Cache up to 10 different kernel sizes
+  max: 100,
+  length: 1
 });
 
-// Optimized kernel for traffic estimation
-const createEstimateTrafficKernel = (size: number) => gpu.createKernel(function(
-  positions: number[],
-  searchVolumes: number[],
-  trafficShares: number[]
-) {
-  const idx = this.thread.x;
-  return Math.floor(searchVolumes[idx] * trafficShares[idx]);
-}).setOutput([size])
-  .setPipeline(true)
-  .setImmutable(true);
-
-const memoizedCreateEstimateTrafficKernel = memoizee(createEstimateTrafficKernel, {
+const memoizedEstimatedTrafficBatch = memoizee(calculateEstimatedTrafficBatch, {
   primitive: true,
-  max: 10
+  max: 100,
+  length: 2
 });
 
-// Optimized kernel for average position calculation
-const createAveragePositionKernel = (size: number) => gpu.createKernel(function(
-  positions: number[],
-  count: number
-) {
-  let sum = 0;
-  const validCount = Math.min(this.constants.size, count);
-  for (let i = 0; i < validCount; i++) {
-    sum += positions[i];
+const memoizedAveragePosition = memoizee(calculateAveragePosition, {
+  primitive: true,
+  max: 100,
+  length: 1
+});
+
+// Process data in optimized batches
+export function processWithOptimizedJS(positions: number[], searchVolumes: number[]) {
+  if (!positions.length || !searchVolumes.length) {
+    return {
+      trafficShares: [],
+      estimatedTraffic: [],
+      averagePosition: 0
+    };
   }
-  return sum / validCount;
-}).setOutput([1])
-  .setConstants({ size })
-  .setPipeline(true)
-  .setImmutable(true);
 
-const memoizedCreateAveragePositionKernel = memoizee(createAveragePositionKernel, {
-  primitive: true,
-  max: 10
-});
-
-// Helper function to get optimal batch size
-function getOptimalBatchSize(length: number): number {
-  // Round up to nearest power of 2 for optimal GPU performance
-  const power = Math.ceil(Math.log2(length));
-  return Math.pow(2, power);
+  try {
+    // Use web workers for large datasets
+    if (positions.length > 10000) {
+      // For very large datasets, we'll process in chunks
+      const CHUNK_SIZE = 5000;
+      const chunks = Math.ceil(positions.length / CHUNK_SIZE);
+      
+      let trafficShares: number[] = [];
+      let estimatedTraffic: number[] = [];
+      
+      for (let i = 0; i < chunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, positions.length);
+        
+        const chunkPositions = positions.slice(start, end);
+        const chunkSearchVolumes = searchVolumes.slice(start, end);
+        
+        trafficShares = trafficShares.concat(memoizedTrafficShareBatch(chunkPositions));
+        estimatedTraffic = estimatedTraffic.concat(
+          memoizedEstimatedTrafficBatch(chunkPositions, chunkSearchVolumes)
+        );
+      }
+      
+      return {
+        trafficShares,
+        estimatedTraffic,
+        averagePosition: memoizedAveragePosition(positions)
+      };
+    }
+    
+    // For smaller datasets, process all at once
+    return {
+      trafficShares: memoizedTrafficShareBatch(positions),
+      estimatedTraffic: memoizedEstimatedTrafficBatch(positions, searchVolumes),
+      averagePosition: memoizedAveragePosition(positions)
+    };
+  } catch (error) {
+    console.error('Processing error:', error);
+    // Fallback to simple calculation
+    return {
+      trafficShares: positions.map(p => p <= 1 ? 0.30 : p <= 2 ? 0.13 : 0.01),
+      estimatedTraffic: positions.map((p, i) => Math.floor(searchVolumes[i] * (p <= 1 ? 0.30 : p <= 2 ? 0.13 : 0.01))),
+      averagePosition: positions.reduce((a, b) => a + b, 0) / positions.length
+    };
+  }
 }
 
-export function processWithGPU(positions: number[], searchVolumes: number[]) {
-  const batchSize = getOptimalBatchSize(positions.length);
-  
-  // Get or create optimized kernels for this batch size
-  const trafficShareKernel = memoizedCreateTrafficShareKernel(batchSize);
-  const estimateTrafficKernel = memoizedCreateEstimateTrafficKernel(batchSize);
-  const averagePositionKernel = memoizedCreateAveragePositionKernel(batchSize);
-
-  // Pad arrays to match batch size
-  const paddedPositions = new Float32Array(batchSize);
-  const paddedSearchVolumes = new Float32Array(batchSize);
-  
-  paddedPositions.set(positions);
-  paddedSearchVolumes.set(searchVolumes);
-
-  // Execute GPU calculations
-  const trafficShares = trafficShareKernel(paddedPositions);
-  const estimatedTraffic = estimateTrafficKernel(paddedPositions, paddedSearchVolumes, trafficShares);
-  const averagePosition = averagePositionKernel(paddedPositions, positions.length);
-
-  // Clean up textures
-  trafficShares.delete();
-  estimatedTraffic.delete();
-
-  return {
-    trafficShares: Array.from(trafficShares.toArray()).slice(0, positions.length),
-    estimatedTraffic: Array.from(estimatedTraffic.toArray()).slice(0, positions.length),
-    averagePosition: averagePosition.toArray()[0]
-  };
-}
+// For backward compatibility
+export const processWithGPU = processWithOptimizedJS;

@@ -1,6 +1,5 @@
 import { ParsedResult, DomainStats, SearchResult, SearchParameters, UrlRanking } from '../types';
 import { calculateTrafficShare } from './trafficShare';
-import { trafficShareKernel, estimateTrafficKernel, averagePositionKernel } from './gpuUtils';
 
 export function extractDomain(url: string): string {
   try {
@@ -72,47 +71,56 @@ export function analyzeDomains(results: ParsedResult[]): DomainStats[] {
       stats.searchVolumes.push(searchVolume);
       stats.count += 1;
       
-      if (query) stats.queries.add(query);
+      // Track URL rankings with estimated traffic
+      if (query) {
+        const urlKey = item.url;
+        const urlRankings = stats.urlRankings.get(urlKey) || [];
+        const estimatedTraffic = Math.floor(searchVolume * calculateTrafficShare(item.position));
+        
+        urlRankings.push({
+          term: query,
+          position: item.position,
+          searchVolume: searchVolume,
+          estimatedTraffic
+        });
+        
+        stats.urlRankings.set(urlKey, urlRankings);
+        stats.queries.add(query);
+      }
+      
       domainMap.set(domain, stats);
     });
   });
 
-  // Second pass: GPU-accelerated calculations
+  // Second pass: calculate statistics
   const domainStats: DomainStats[] = [];
 
   for (const [domain, stats] of domainMap.entries()) {
-    // Pad arrays to match kernel output size
-    const paddedPositions = [...stats.positions];
-    const paddedSearchVolumes = [...stats.searchVolumes];
-    while (paddedPositions.length < 1024) {
-      paddedPositions.push(0);
-      paddedSearchVolumes.push(0);
-    }
-
-    // Calculate traffic shares using GPU
-    const trafficShares = trafficShareKernel(paddedPositions);
+    // Calculate average position
+    const averagePosition = stats.positions.reduce((sum, pos) => sum + pos, 0) / stats.count;
     
-    // Calculate estimated traffic using GPU
-    const estimatedTraffic = estimateTrafficKernel(
-      paddedPositions,
-      paddedSearchVolumes,
-      trafficShares
-    );
-
-    // Calculate average position using GPU
-    const averagePosition = averagePositionKernel(paddedPositions, stats.count);
-
     // Calculate total estimated traffic
     let totalEstimatedTraffic = 0;
-    for (let i = 0; i < stats.count; i++) {
-      totalEstimatedTraffic += estimatedTraffic[i];
+    const urlRankings: UrlRanking[] = [];
+    
+    // Process URL rankings
+    for (const [url, rankings] of stats.urlRankings.entries()) {
+      // Sum up estimated traffic for this domain
+      const urlTraffic = rankings.reduce((sum, r) => sum + r.estimatedTraffic, 0);
+      totalEstimatedTraffic += urlTraffic;
+      
+      // Add to URL rankings
+      urlRankings.push({
+        url,
+        rankings
+      });
     }
 
     domainStats.push({
       domain,
-      averagePosition: Number(averagePosition[0].toFixed(2)),
+      averagePosition: Number(averagePosition.toFixed(2)),
       occurrences: stats.count,
-      urlRankings: [], // We'll populate this separately
+      urlRankings,
       queries: Array.from(stats.queries),
       totalEstimatedTraffic
     });

@@ -1,4 +1,3 @@
-import { processWithGPU } from '../utils/gpuUtils';
 import type { ParsedResult } from '../types';
 
 // Helper function to extract domain from URL
@@ -11,79 +10,114 @@ function extractDomain(url: string): string {
   }
 }
 
+// Helper function to safely parse JSON
+function safeJsonParse(jsonString: string | undefined) {
+  if (!jsonString) return null;
+  try {
+    return JSON.parse(jsonString);
+  } catch (e) {
+    return null;
+  }
+}
+
 // Process chunks of data in the worker
 self.onmessage = (e: MessageEvent) => {
-  const { results, chunkSize = 1000 } = e.data;
+  const { results } = e.data;
   
-  // Process in chunks to avoid blocking
-  const processChunk = async (chunk: ParsedResult[]) => {
+  try {
     const domainData = new Map();
+    const totalResults = results.length;
+    let processedCount = 0;
     
-    // First pass: collect data per domain
-    chunk.forEach(result => {
-      try {
-        const parsedData = JSON.parse(result.response_data.contents || '{}');
+    // Process in smaller batches to avoid UI freezing
+    const BATCH_SIZE = 100;
+    const processBatch = (startIndex: number) => {
+      const endIndex = Math.min(startIndex + BATCH_SIZE, totalResults);
+      
+      for (let i = startIndex; i < endIndex; i++) {
+        const result = results[i];
+        if (!result || !result.response_data) continue;
+        
+        const parsedData = safeJsonParse(result.response_data.contents);
+        if (!parsedData || !parsedData.result?.organic_results) continue;
+        
         const query = parsedData.search_parameters?.query || '';
         const searchVolume = result.search_volume || 0;
         
-        parsedData.result?.organic_results?.forEach(item => {
+        parsedData.result.organic_results.forEach(item => {
+          if (!item || !item.url) return;
+          
           const domain = extractDomain(item.url);
           if (!domain) return;
 
           const stats = domainData.get(domain) || {
             positions: [],
             searchVolumes: [],
-            urls: new Set(),
+            urlRankings: new Map(),
             queries: new Set()
           };
 
           stats.positions.push(item.position);
           stats.searchVolumes.push(searchVolume);
-          stats.urls.add(item.url);
-          if (query) stats.queries.add(query);
+          
+          // Track URL rankings
+          const urlKey = item.url;
+          const urlRankings = stats.urlRankings.get(urlKey) || [];
+          
+          if (query) {
+            urlRankings.push({
+              term: query,
+              position: item.position,
+              searchVolume: searchVolume
+            });
+            stats.urlRankings.set(urlKey, urlRankings);
+            stats.queries.add(query);
+          }
           
           domainData.set(domain, stats);
         });
-      } catch (error) {
-        console.error('Error processing result:', error);
       }
-    });
-
-    // Second pass: GPU calculations for each domain
-    const processedData = [];
-    for (const [domain, stats] of domainData.entries()) {
-      const {
-        trafficShares,
-        estimatedTraffic,
-        averagePosition
-      } = processWithGPU(stats.positions, stats.searchVolumes);
-
-      processedData.push({
-        domain,
-        averagePosition,
-        occurrences: stats.positions.length,
-        urls: Array.from(stats.urls),
-        queries: Array.from(stats.queries),
-        totalEstimatedTraffic: estimatedTraffic.reduce((a, b) => a + b, 0)
+      
+      processedCount = endIndex;
+      
+      // Report progress
+      self.postMessage({
+        type: 'progress',
+        data: Math.round((processedCount / totalResults) * 100)
       });
-    }
+      
+      // Process next batch or finish
+      if (processedCount < totalResults) {
+        setTimeout(() => processBatch(processedCount), 0);
+      } else {
+        // Convert data for main thread processing
+        const preparedData = Array.from(domainData.entries()).map(([domain, stats]) => {
+          // Convert URL rankings to array format
+          const urlRankings = Array.from(stats.urlRankings.entries()).map(([url, rankings]) => ({
+            url,
+            rankings
+          }));
+          
+          return {
+            domain,
+            positions: stats.positions,
+            searchVolumes: stats.searchVolumes,
+            occurrences: stats.positions.length,
+            urlRankings,
+            queries: Array.from(stats.queries)
+          };
+        });
 
-    return processedData;
-  };
-
-  // Process all chunks
-  const chunks = [];
-  for (let i = 0; i < results.length; i += chunkSize) {
-    chunks.push(results.slice(i, i + chunkSize));
-  }
-
-  Promise.all(chunks.map(processChunk))
-    .then(processedChunks => {
-      // Merge chunks and send back results
-      const mergedData = processedChunks.flat();
-      self.postMessage({ type: 'complete', data: mergedData });
-    })
-    .catch(error => {
-      self.postMessage({ type: 'error', error: error.message });
+        self.postMessage({ type: 'complete', data: preparedData });
+      }
+    };
+    
+    // Start processing
+    processBatch(0);
+  } catch (error) {
+    self.postMessage({
+      type: 'error',
+      error: error instanceof Error ? error.message : 'Processing failed'
     });
+  }
 };
